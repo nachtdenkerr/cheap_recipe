@@ -136,6 +136,8 @@ celerybeat.pid
 
 # Environments
 .env
+keys.env
+cheap-recipe-env/
 .envrc
 .venv
 env/
@@ -205,3 +207,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local dev SQLite (backend/data/ keeps seed files, not the database)
+backend/data/*.db
+backend/data/*.db-journal
+backend/data/*.sqlite3
