@@ -89,14 +89,20 @@ Then run the pipeline:
 
 ```bash
 # fetch offers → clean → translate → classify, writing a CSV per stage to data/
-uv run python scripts/fetch_edeka.py
+uv run cheaprecipe offers
 
 # skip the LLM stages (no API spend, no network beyond EDEKA)
-uv run python scripts/fetch_edeka.py --skip-llm
+uv run cheaprecipe offers --skip-llm
 
 # retrieve recipes for the classified offers
-uv run python scripts/load_recipes.py --diet vegetarian --use cooking
+uv run cheaprecipe recipes --diet vegetarian --use cooking
 ```
+
+Both commands run through `src/cheaprecipe/pipeline.py`, which is the only
+orchestration layer — there is no `scripts/` directory. Every stage logs what it
+started, what it produced, and how many records it dropped on the way; add `-v`
+for per-batch LLM calls, token counts and HTTP detail. A failure logs the
+traceback against the stage that raised it and exits non-zero.
 
 Every model call goes through `src/cheaprecipe/llm.py`, which points the OpenAI
 SDK at OpenRouter. Changing model or vendor is one line there.
@@ -130,8 +136,9 @@ cheap_recipe/
       db/                 # models, repositories, migrations
       observability/      # Langfuse client + decorators
       config.py  llm.py   # .env loading, OpenRouter client
+      pipeline.py         # stage orchestration + `cheaprecipe` CLI
+      logging_setup.py    # rich console logging, stage() timer
     tests/                # deterministic (assert on calculation) + LLM evals
-    scripts/              # seed_db, load_recipes, fetch_edeka (thin, import src)
     data/                 # seed files + local dev SQLite (gitignored .db)
     pyproject.toml        # uv
   frontend/               # separate npm project
