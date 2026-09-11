@@ -166,9 +166,19 @@ class Offer(Base):
     description: Mapped[str | None] = mapped_column(String(255))
 
     price: Mapped[float]
+    # Parsed out of `description` by normalization/quantity.py.
     price_per_unit: Mapped[float | None]
+    # What price_per_unit is per: "kg", "l" or "Stück".
+    price_per_unit_unit: Mapped[str | None] = mapped_column(String(10))
     quantity_amount: Mapped[float | None]
     quantity_unit: Mapped[str | None] = mapped_column(String(20))
+    # "package" (quantity_amount is what you receive) or "price_basis" (the
+    # goods are sold loose and the price is quoted per that amount).
+    quantity_basis: Mapped[str | None] = mapped_column(String(20))
+    pack_count: Mapped[int | None]
+    # Refundable Pfand, additional to `price` — kept apart so cost calculation
+    # can decide whether it counts.
+    deposit: Mapped[float | None]
 
     valid_from: Mapped[date | None]
     valid_till: Mapped[date | None]
