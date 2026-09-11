@@ -73,7 +73,7 @@ cd backend
 uv sync --extra dev
 ```
 
-Put your keys in `keys.env` at the repo root (gitignored):
+Put your keys in `.env` at the repo root (gitignored):
 
 ```text
 OPENROUTER_API_KEY=...
@@ -129,7 +129,7 @@ cheap_recipe/
       ranking/            # phase-2 seam, trivial heuristic for now
       db/                 # models, repositories, migrations
       observability/      # Langfuse client + decorators
-      config.py  llm.py   # keys.env loading, OpenRouter client
+      config.py  llm.py   # .env loading, OpenRouter client
     tests/                # deterministic (assert on calculation) + LLM evals
     scripts/              # seed_db, load_recipes, fetch_edeka (thin, import src)
     data/                 # seed files + local dev SQLite (gitignored .db)

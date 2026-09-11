@@ -23,7 +23,7 @@ DEFAULT_MODEL = "openai/gpt-4.1-mini"
 def get_client() -> OpenAI:
     """Shared OpenRouter client.
 
-    OPENROUTER_API_KEY comes from keys.env. The two optional headers below are
+    OPENROUTER_API_KEY comes from .env. The two optional headers below are
     what OpenRouter attributes usage to on its public leaderboards.
     """
     load_keys()
@@ -31,7 +31,7 @@ def get_client() -> OpenAI:
     api_key = openrouter_api_key()
     if not api_key:
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not set — add it to keys.env at the repo root."
+            "OPENROUTER_API_KEY is not set — add it to .env at the repo root."
         )
 
     headers = {}

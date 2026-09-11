@@ -136,7 +136,6 @@ celerybeat.pid
 
 # Environments
 .env
-keys.env
 cheap-recipe-env/
 .envrc
 .venv
