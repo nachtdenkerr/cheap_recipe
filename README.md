@@ -59,14 +59,13 @@ downstream of it is scaffolded but not yet written:
 | `calculation/` nutrition, cost, waste, allergens | stub |
 | `ranking/`, `db/`, `observability/`, `app/` API, `frontend/` | stub |
 
-Known rough edges: the EDEKA endpoint is reached with a captured browser
-session, so the cookies in `ingestion/edeka.py` go stale and need recapturing;
-one market is hardcoded as the default; and the recipe API is queried with only
-the ten cheapest ingredients.
+Known rough edges: the EDEKA endpoint is undocumented, so it can change
+shape without notice; one market is hardcoded as the default; and the recipe API
+is queried with only the ten cheapest ingredients.
 
 ## Getting started
 
-Requires Python 3.9+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cd backend

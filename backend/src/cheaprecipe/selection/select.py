@@ -31,7 +31,7 @@ USE_COLUMNS = {
 
 def cookable(df: pd.DataFrame) -> pd.DataFrame:
     """Offers the classifier judged usable as a recipe ingredient."""
-    return df[df["can_cook"] == True]  # noqa: E712 — pandas mask, not a bool test
+    return df[df["can_cook"] == True]  # pandas mask, not a bool test
 
 
 def select_items(
@@ -57,7 +57,7 @@ def select_items(
     df = df[df["diet_type"].isin(DIET_ALLOWED[diet_type])]
     after_diet = len(df)
 
-    df = df[df[USE_COLUMNS[use]] == True]  # noqa: E712
+    df = df[df[USE_COLUMNS[use]] == True]  # pandas mask, not a bool test
 
     # The attrition chain is the whole story when a run returns no recipes.
     log.info(

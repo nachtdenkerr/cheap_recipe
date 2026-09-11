@@ -12,13 +12,15 @@ import os
 import time
 from functools import lru_cache
 
+from openai import OpenAI
+
 from cheaprecipe.config import load_keys, openrouter_api_key
 
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
-DEFAULT_MODEL = "google/gemini-3.8-flash"
+DEFAULT_MODEL = "openai/gpt-4.1-mini"
 
 
 @lru_cache(maxsize=1)
