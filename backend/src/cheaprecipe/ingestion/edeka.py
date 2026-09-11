@@ -1,8 +1,12 @@
 """EDEKA offer fetching and parsing.
 
-The offers come from the XHR endpoint the store's "Angebote" page calls. The
-cookies below were captured from a browser session; they go stale, at which
-point the request starts coming back empty or as HTML and has to be recaptured.
+The offers come from the XHR endpoint the store's "Angebote" page calls. It
+needs no authentication: no cookies, no API key, no custom headers.
+
+Do not add a spoofed browser user-agent. The edge rejects a request that claims
+to be Chrome or Firefox without the matching TLS fingerprint, so a browser UA
+turns a working request into a 403 — as does any unrecognised custom UA. The
+`requests` default gets through; send it as-is.
 """
 
 from __future__ import annotations
@@ -14,31 +18,6 @@ AUTH_PROXY_URL = "https://www.edeka.de/api/auth-proxy/"
 
 DEFAULT_MARKET_ID = "10001604"
 
-COOKIES = {
-    "EDEKA_PRIVACY": "1%40087%7C6%7C5030%40%4091%401759168772089%2C1759168772089%2C1792864772089%40",
-    "EDEKA_PRIVACY_CENTER": "",
-    "JSESSIONID": "868E369E9FD720B0A453D661690D2FE1",
-    "atuserid": "%7B%22name%22%3A%22atuserid%22%2C%22val%22%3A%22OPT-OUT%22%2C%22options%22%3A%7B%22end%22%3A%222026-10-31T18%3A02%3A53.457Z%22%2C%22path%22%3A%22%2F%22%7D%7D",
-    "TCPID": "12591202533522197673",
-}
-
-HEADERS = {
-    "accept": "*/*",
-    "accept-language": "en-US,en;q=0.9,de;q=0.8,vi;q=0.7",
-    "priority": "u=1, i",
-    "referer": "https://www.edeka.de/eh/s%C3%BCdwest/edeka-frank-erlachstra%C3%9Fe-45/angebote.jsp",
-    "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    "user-agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-    ),
-}
-
 # Fields kept from the offer payload; the rest is display metadata.
 OFFER_COLUMNS = [
     "title",
@@ -49,13 +28,36 @@ OFFER_COLUMNS = [
 ]
 
 
+class OfferFetchError(RuntimeError):
+    """The offers endpoint did not return a usable payload."""
+
+
 def fetch_offers(market_id: str = DEFAULT_MARKET_ID, limit: int = 999) -> dict:
-    """Fetch the current reduced-price offers as the raw JSON payload."""
+    """Fetch the current reduced-price offers as the raw JSON payload.
+
+    Raises OfferFetchError rather than letting a non-JSON body surface as a
+    decode error: when the edge blocks a request it answers with HTML, which is
+    otherwise reported as a confusing JSONDecodeError.
+    """
     params = {"path": f"api/offers?limit={limit}&marketId={market_id}"}
-    response = requests.get(
-        AUTH_PROXY_URL, params=params, cookies=COOKIES, headers=HEADERS, timeout=30
-    )
+    response = requests.get(AUTH_PROXY_URL, params=params, timeout=30)
+
+    if response.status_code == 403:
+        raise OfferFetchError(
+            "edeka.de refused the request (HTTP 403). This usually means a "
+            "user-agent header was added — the endpoint wants the plain "
+            "`requests` default, not a spoofed browser UA."
+        )
+
     response.raise_for_status()
+
+    content_type = response.headers.get("content-type", "")
+    if "json" not in content_type:
+        raise OfferFetchError(
+            f"Expected JSON but got {content_type or 'an unknown content type'}. "
+            "The endpoint contract may have changed."
+        )
+
     return response.json()
 
 
@@ -64,7 +66,14 @@ def parse_offers(json_data: dict) -> pd.DataFrame:
 
     Columns: title, price, category, descriptions, validTill.
     """
-    df = pd.json_normalize(json_data["offers"])
+    offers = json_data.get("offers")
+    if not offers:
+        raise OfferFetchError(
+            f"The response carried no offers — check that marketId is valid. "
+            f"Payload keys: {sorted(json_data)}"
+        )
+
+    df = pd.json_normalize(offers)
     df = df[OFFER_COLUMNS]
 
     df = df.rename(columns={"price.value": "price", "category.name": "category"})

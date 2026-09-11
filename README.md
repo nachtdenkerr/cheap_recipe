@@ -80,6 +80,11 @@ OPENROUTER_API_KEY=...
 SPOONACULAR_API_KEY=...
 ```
 
+The EDEKA offers endpoint needs no credentials — no cookie, no key. One caveat:
+do not give it a spoofed browser user-agent. The edge rejects a request claiming
+to be Chrome or Firefox without a matching TLS fingerprint, so adding a browser
+UA causes the 403 it looks like it should prevent.
+
 Then run the pipeline:
 
 ```bash
