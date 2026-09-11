@@ -7,11 +7,14 @@ last line instead of the whole batch.
 from __future__ import annotations
 
 import json
+import logging
 
 import pandas as pd
 from openai import OpenAI
 
 from cheaprecipe.llm import DEFAULT_MODEL, complete
+
+log = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 20
 
@@ -103,9 +106,11 @@ def classify_ingredients_batch(
     returns: list of dicts, one per successfully parsed line
     """
     all_records: list[dict] = []
+    batch_count = (len(ingredients) + batch_size - 1) // batch_size
 
-    for start in range(0, len(ingredients), batch_size):
+    for index, start in enumerate(range(0, len(ingredients), batch_size), start=1):
         batch = ingredients[start : start + batch_size]
+        log.debug("classifying batch %d/%d (%d ingredients)", index, batch_count, len(batch))
 
         raw_text = complete(
             [
@@ -122,6 +127,10 @@ def classify_ingredients_batch(
             client=client,
         )
 
+        unparsable = 0
+        incomplete = 0
+        batch_records = 0
+
         for line in raw_text.splitlines():
             line = line.strip()
             if not line:
@@ -131,13 +140,26 @@ def classify_ingredients_batch(
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 # Most likely a truncated final line; drop it.
+                unparsable += 1
                 continue
 
             if "ingredient_en" not in obj:
+                incomplete += 1
                 continue
 
             all_records.append(obj)
+            batch_records += 1
 
+        if batch_records < len(batch):
+            # Silently dropping lines is how ingredients go missing downstream,
+            # so account for every one the batch did not produce.
+            log.warning(
+                "batch %d/%d: %d/%d ingredients classified "
+                "(%d unparsable lines, %d without ingredient_en)",
+                index, batch_count, batch_records, len(batch), unparsable, incomplete,
+            )
+
+    log.info("classified %d/%d ingredients", len(all_records), len(ingredients))
     return all_records
 
 
@@ -148,10 +170,29 @@ def add_classification_columns(
 ) -> pd.DataFrame:
     """Classify the distinct ingredients in df and join the flags back on."""
     unique_ingredients = sorted(df["ingredient_en"].dropna().unique().tolist())
+    log.info("%d offers -> %d distinct ingredients to classify", len(df), len(unique_ingredients))
 
     classified = classify_ingredients_batch(
         unique_ingredients, batch_size=batch_size, client=client
     )
 
-    class_df = pd.DataFrame(classified)
-    return df.merge(class_df, on="ingredient_en", how="left")
+    if not classified:
+        raise ValueError(
+            f"The classifier returned nothing for {len(unique_ingredients)} "
+            "ingredients — check the model response format in the logs."
+        )
+
+    class_df = pd.DataFrame(classified).drop_duplicates(subset="ingredient_en")
+    out = df.merge(class_df, on="ingredient_en", how="left")
+
+    # Rows with no ingredient_en were already reported upstream; what matters
+    # here is an ingredient the classifier was given and did not answer for.
+    unclassified = out["can_cook"].isna() & out["ingredient_en"].notna()
+    if unclassified.any():
+        examples = out.loc[unclassified, "ingredient_en"].drop_duplicates().head(5).tolist()
+        log.warning(
+            "%d/%d offers carry no classification, e.g. %s — selection will skip them",
+            int(unclassified.sum()), len(out), examples,
+        )
+
+    return out

@@ -7,7 +7,11 @@ title -> English ingredient) lives in `ingredients.py`.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 # Categories that never produce a recipe ingredient.
 EXCLUDED_CATEGORIES = ["Drogerie", "Tiernahrung", "Non-Food"]
@@ -42,9 +46,18 @@ def extract_weekday_from_title(title: str | None) -> int | None:
 
 def drop_non_food(df: pd.DataFrame) -> pd.DataFrame:
     """Remove the categories and descriptions that are not food."""
-    df = df[~df["category"].isin(EXCLUDED_CATEGORIES)]
+    excluded = df["category"].isin(EXCLUDED_CATEGORIES)
+    if excluded.any():
+        by_category = df.loc[excluded, "category"].value_counts().to_dict()
+        log.info("dropped %d non-food offers by category: %s", int(excluded.sum()), by_category)
+    df = df[~excluded]
+
     for term in EXCLUDED_DESCRIPTION_TERMS:
-        df = df[~df["descriptions"].str.contains(term, na=False)]
+        matches = df["descriptions"].str.contains(term, na=False)
+        if matches.any():
+            log.info("dropped %d offers matching description term %r", int(matches.sum()), term)
+        df = df[~matches]
+
     return df
 
 
@@ -62,8 +75,15 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     df["price"] = df["price"].astype(float)
 
     df["weekday_in_title"] = df["title"].apply(extract_weekday_from_title)
+    log.debug(
+        "%d/%d titles name a weekday", int(df["weekday_in_title"].notna().sum()), len(df)
+    )
 
     df["validTill"] = pd.to_datetime(df["validTill"], errors="coerce")
+    undated = int(df["validTill"].isna().sum())
+    if undated:
+        # validFrom is derived from validTill, so these end up undated too.
+        log.warning("%d/%d offers have no usable validTill — validFrom will be NaT", undated, len(df))
     current_weekday = df["validTill"].dt.weekday
     weekday_target = df["weekday_in_title"].fillna(DEFAULT_WEEKDAY)
 
@@ -84,6 +104,8 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_offers(df: pd.DataFrame) -> pd.DataFrame:
     """Full deterministic pass: drop non-food, normalize, sort."""
+    before = len(df)
     df = drop_non_food(df)
     df = normalize(df)
+    log.info("cleaned offers: %d in -> %d out (%d dropped)", before, len(df), before - len(df))
     return df.sort_values(by=["category", "title"]).reset_index(drop=True)

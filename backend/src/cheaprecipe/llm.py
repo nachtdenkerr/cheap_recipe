@@ -7,16 +7,18 @@ which is what lets us swap vendors without touching call sites.
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from functools import lru_cache
-
-from openai import OpenAI
 
 from cheaprecipe.config import load_keys, openrouter_api_key
 
+log = logging.getLogger(__name__)
+
 BASE_URL = "https://openrouter.ai/api/v1"
 
-DEFAULT_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_MODEL = "google/gemini-3.8-flash"
 
 
 @lru_cache(maxsize=1)
@@ -60,9 +62,29 @@ def complete(
     """
     client = client or get_client()
 
+    started = time.perf_counter()
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         max_tokens=max_tokens,
     )
-    return (response.choices[0].message.content or "").strip()
+    elapsed = time.perf_counter() - started
+
+    usage = getattr(response, "usage", None)
+    log.debug(
+        "%s completed in %.2fs (prompt=%s, completion=%s tokens)",
+        model,
+        elapsed,
+        getattr(usage, "prompt_tokens", "?"),
+        getattr(usage, "completion_tokens", "?"),
+    )
+
+    choice = response.choices[0]
+    if choice.finish_reason == "length":
+        # A truncated response is the usual cause of dropped batch records
+        # downstream, and nothing else surfaces it.
+        log.warning(
+            "%s hit the %d-token cap — the response is truncated", model, max_tokens
+        )
+
+    return (choice.message.content or "").strip()

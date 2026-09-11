@@ -6,7 +6,11 @@ actually cook with.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 DIET_TYPES = ("vegan", "vegetarian", "normal")
 
@@ -45,9 +49,28 @@ def select_items(
     if use not in USE_COLUMNS:
         raise ValueError(f"unknown use {use!r}; expected one of {tuple(USE_COLUMNS)}")
 
+    before = len(df)
+
     df = cookable(df)
+    after_cookable = len(df)
+
     df = df[df["diet_type"].isin(DIET_ALLOWED[diet_type])]
-    return df[df[USE_COLUMNS[use]] == True]  # noqa: E712
+    after_diet = len(df)
+
+    df = df[df[USE_COLUMNS[use]] == True]  # noqa: E712
+
+    # The attrition chain is the whole story when a run returns no recipes.
+    log.info(
+        "selected %d/%d offers: can_cook %d -> diet=%s %d -> use=%s %d",
+        len(df), before, after_cookable, diet_type, after_diet, use, len(df),
+    )
+    if df.empty:
+        log.warning(
+            "no offers survived selection for diet=%s use=%s — retrieval has nothing to query on",
+            diet_type, use,
+        )
+
+    return df
 
 
 def ingredient_names(df: pd.DataFrame, limit: int | None = None) -> list[str]:
@@ -55,4 +78,6 @@ def ingredient_names(df: pd.DataFrame, limit: int | None = None) -> list[str]:
     names = (
         df.sort_values("price")["ingredient_en"].dropna().drop_duplicates().tolist()
     )
+    if limit and len(names) > limit:
+        log.info("%d distinct ingredients, querying on the %d cheapest", len(names), limit)
     return names[:limit] if limit else names

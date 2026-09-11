@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv",
     "openai",
     "langfuse",
+    "rich",
 ]
 
 [project.optional-dependencies]

@@ -11,6 +11,8 @@ turns a working request into a 403 — as does any unrecognised custom UA. The
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 import requests
 
@@ -28,6 +30,9 @@ OFFER_COLUMNS = [
 ]
 
 
+log = logging.getLogger(__name__)
+
+
 class OfferFetchError(RuntimeError):
     """The offers endpoint did not return a usable payload."""
 
@@ -40,6 +45,7 @@ def fetch_offers(market_id: str = DEFAULT_MARKET_ID, limit: int = 999) -> dict:
     otherwise reported as a confusing JSONDecodeError.
     """
     params = {"path": f"api/offers?limit={limit}&marketId={market_id}"}
+    log.debug("GET %s market_id=%s limit=%s", AUTH_PROXY_URL, market_id, limit)
     response = requests.get(AUTH_PROXY_URL, params=params, timeout=30)
 
     if response.status_code == 403:
@@ -58,6 +64,9 @@ def fetch_offers(market_id: str = DEFAULT_MARKET_ID, limit: int = 999) -> dict:
             "The endpoint contract may have changed."
         )
 
+    log.debug(
+        "edeka responded %s, %s bytes", response.status_code, len(response.content)
+    )
     return response.json()
 
 
@@ -74,6 +83,14 @@ def parse_offers(json_data: dict) -> pd.DataFrame:
         )
 
     df = pd.json_normalize(offers)
+
+    missing = [column for column in OFFER_COLUMNS if column not in df.columns]
+    if missing:
+        raise OfferFetchError(
+            f"Offer payload is missing expected column(s): {missing}. "
+            f"The endpoint contract may have changed; got: {sorted(df.columns)}"
+        )
+
     df = df[OFFER_COLUMNS]
 
     df = df.rename(columns={"price.value": "price", "category.name": "category"})
@@ -83,4 +100,9 @@ def parse_offers(json_data: dict) -> pd.DataFrame:
     df["descriptions"] = df["descriptions"].str[0]
     df["validTill"] = pd.to_datetime(df["validTill"], errors="coerce")
 
+    undated = int(df["validTill"].isna().sum())
+    if undated:
+        log.warning("%d/%d offers have an unparseable validTill", undated, len(df))
+
+    log.info("parsed %d offers in %d categories", len(df), df["category"].nunique())
     return df
