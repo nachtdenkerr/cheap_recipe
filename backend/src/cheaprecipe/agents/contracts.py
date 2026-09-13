@@ -14,7 +14,47 @@ from pydantic import BaseModel, Field
 # A closed set the critic and the UI can both rely on; DIET_TYPES in
 # selection/select.py is the matching vocabulary on the offers side.
 CookingLevel = Literal["easy", "medium", "hard"]
-DietType = Literal["vegan", "vegetarian", "normal"]
+DietType = Literal[
+    "gluten-free",
+    "ketogenic",
+    "vegan",
+    "vegetarian",
+    "lacto-vegetarian",
+    "ovo-vegetarian",
+    "pescetarian",
+    "paleo",
+    "primal",
+    "normal"
+    ]
+Cuisine = Literal[
+    "African",
+    "Asian",
+    "American",
+    "British",
+    "Cajun",
+    "Caribbean",
+    "Chinese",
+    "Eastern European",
+    "European",
+    "French",
+    "German",
+    "Greek",
+    "Indian",
+    "Irish",
+    "Italian",
+    "Japanese",
+    "Jewish",
+    "Korean",
+    "Latin American",
+    "Mediterranean",
+    "Mexican",
+    "Middle Eastern",
+    "Nordic",
+    "Southern",
+    "Spanish",
+    "Thai",
+    "Vietnamese",
+]
 
 
 class Quantity(BaseModel):
@@ -45,7 +85,7 @@ class Recipe(BaseModel):
     preparation_time: int
     cooking_time: int
     cooking_level: CookingLevel
-    cuisine: str
+    cuisine: list[Cuisine]
     total_kcal: int
 
     # Set when the recipe came from retrieval rather than the planner, so it
