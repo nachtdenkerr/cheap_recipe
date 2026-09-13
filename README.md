@@ -141,7 +141,6 @@ cheap_recipe/
     data/                 # seed files + local dev SQLite (gitignored .db)
     pyproject.toml        # uv
   frontend/               # separate npm project
-  workflow.ipynb          # the original prototype the pipeline came from
 ```
 
 `app/` may import `src/cheaprecipe`; the reverse is never allowed. That keeps
