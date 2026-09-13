@@ -106,6 +106,8 @@ def parse_description(description: str | None, price: float | None = None) -> di
         "price_per_unit": None,
         "price_per_unit_unit": None,
         "printed_price_per_unit": None,
+        "_printed_price_per_unit_low": None,
+        "_derived_price_per_unit": None,
     }
 
     if not isinstance(description, str) or not description.strip():

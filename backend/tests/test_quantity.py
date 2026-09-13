@@ -91,7 +91,9 @@ def test_drop_unpriced_removes_discount_promotions():
     assert normalize.drop_unpriced(df)["title"].tolist() == ["Salami"]
 
 
-OFFERS_CSV = Path(__file__).resolve().parents[1] / "data" / "offers_clean.csv"
+# The first checkpoint the pipeline writes (pipeline.RAW_CSV); descriptions
+# and prices are untouched there, which is all this needs.
+OFFERS_CSV = Path(__file__).resolve().parents[1] / "data" / "raw_offers.csv"
 
 
 @pytest.mark.skipif(not OFFERS_CSV.exists(), reason="no scraped offers checked in")
@@ -101,7 +103,10 @@ def test_derived_base_price_matches_edeka_on_the_real_data():
     Every row where we can derive it independently must agree, because a
     disagreement means the quantity was misread.
     """
-    df = normalize.drop_unpriced(pd.read_csv(OFFERS_CSV)).reset_index(drop=True)
+    # Mirror clean_offers: non-food goes first, and it is what carries the
+    # quantities this parser cannot read (wash loads, sheets, a football).
+    df = normalize.drop_non_food(pd.read_csv(OFFERS_CSV))
+    df = normalize.drop_unpriced(df).reset_index(drop=True)
 
     mismatches = []
     for description, price in zip(df["descriptions"], df["price"]):
