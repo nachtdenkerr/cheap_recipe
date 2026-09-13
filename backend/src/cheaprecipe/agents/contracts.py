@@ -11,12 +11,12 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 # The vocabularies are shared with the offer side — see cheaprecipe.vocabulary.
-from cheaprecipe.vocabulary import CookingLevel, Cuisine, DietType
+from cheaprecipe.vocabulary import CookingLevel, Cuisine, DietType, Unit
 
 
 class Quantity(BaseModel):
     amount: float
-    unit: str
+    unit: Unit
 
 
 class Ingredient(BaseModel):
@@ -37,13 +37,13 @@ class Recipe(BaseModel):
     name: str
     ingredients: list[Ingredient]
     appliances: list[Appliance] = Field(default_factory=list)
-    cooking_instructions: str
+    cooking_instructions: str | None = None
     servings: int
-    preparation_time: int
+    preparation_time: int | None = None
     cooking_time: int
-    cooking_level: CookingLevel
+    cooking_level: CookingLevel | None = None
     cuisine: list[Cuisine]
-    total_kcal: int
+    total_kcal: int | None = None
 
     # Set when the recipe came from retrieval rather than the planner, so it
     # can be reconciled with the recipe table instead of inserted twice.
@@ -56,6 +56,7 @@ class Item(BaseModel):
     quantity: Quantity
     price: float
     price_per_unit: float
+    price_per_unit_unit: Unit
     sale_start_date: date | None = None
     offer_id: int | None = None
 

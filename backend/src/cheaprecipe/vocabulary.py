@@ -15,6 +15,12 @@ correct; diet is decided on the recipe instead.
 
 from typing import Literal, get_args
 
+Unit = Literal[
+    "g",
+    "kg",
+    "l",
+    "Stück"
+]
 # --- what a user can ask for (Spoonacular's `diet` values, plus "normal") ----
 
 DietType = Literal[
