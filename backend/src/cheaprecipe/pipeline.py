@@ -31,11 +31,10 @@ from cheaprecipe.selection import select
 
 log = logging.getLogger(__name__)
 
-OFFERS_CLEAN_CSV = "offers_clean.csv"
 TRANSLATED_CSV = "translated.csv"
 CLASSIFIED_CSV = "new_columns.csv"
+RAW_CSV = "raw_offers.csv"
 RECIPES_JSON = "recipes.json"
-
 
 def _checkpoint(df: pd.DataFrame, path: Path) -> None:
     """Write a stage result and say where it went."""
@@ -59,10 +58,10 @@ def build_offers(
     with stage("fetch_offers", log, market_id=market_id):
         payload = edeka.fetch_offers(market_id=market_id)
         df = edeka.parse_offers(payload)
+        _checkpoint(df, out_dir / RAW_CSV)
 
     with stage("clean_offers", log):
         df = normalize.clean_offers(df)
-        _checkpoint(df, out_dir / OFFERS_CLEAN_CSV)
 
     if skip_llm:
         log.info("--skip-llm: stopping after the deterministic steps")
@@ -84,7 +83,7 @@ def build_recipes(
     out_path: Path | None = None,
     diet_type: str = "normal",
     use: str = "cooking",
-    number: int = retrieval.DEFAULT_NUMBER,
+    number: int = retrieval.DEFAULT_RECIPE_NUMBER,
 ) -> list[dict]:
     """Select from the classified offers and retrieve candidate recipes."""
     offers_path = Path(offers_path or DATA_DIR / CLASSIFIED_CSV)
@@ -139,8 +138,8 @@ def _parser() -> argparse.ArgumentParser:
     recipes.add_argument("--offers", type=Path, default=DATA_DIR / CLASSIFIED_CSV)
     recipes.add_argument("--out", type=Path, default=DATA_DIR / RECIPES_JSON)
     recipes.add_argument("--diet", default="normal", choices=select.DIET_TYPES)
-    recipes.add_argument("--use", default="cooking", choices=tuple(select.USE_COLUMNS))
-    recipes.add_argument("--number", type=int, default=retrieval.DEFAULT_NUMBER)
+    recipes.add_argument("--use", default="cooking", choices=select.USE_CHOICES)
+    recipes.add_argument("--number", type=int, default=retrieval.DEFAULT_RECIPE_NUMBER)
 
     return parser
 

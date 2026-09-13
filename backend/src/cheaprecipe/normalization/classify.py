@@ -1,5 +1,8 @@
 """Classify English ingredients: cookability, diet type, and usage flags.
 
+`use_baking` and `use_drinks` mark the specialised uses; ordinary savoury
+cooking is the residual case, flagged by `can_cook` alone.
+
 Output is JSONL rather than a JSON array so a truncated response only costs the
 last line instead of the whole batch.
 """
@@ -17,12 +20,13 @@ from cheaprecipe.llm import DEFAULT_MODEL, complete
 log = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 20
+# ingredient names and a stray blank line.
+TOKENS_PER_RECORD = 60
 
 CLASS_COLUMNS = [
     "ingredient_en",
     "can_cook",
     "diet_type",
-    "use_cooking",
     "use_baking",
     "use_drinks",
 ]
@@ -34,11 +38,12 @@ For each English ingredient name, decide:
 
 1) can_cook (boolean):
    - true  = can realistically be used in cooking, baking, OR drink recipes
-            (examples: pork, rice, carrots, onions, red wine, white wine, beer,
-                       stock, cocoa powder, sugar, lemon juice)
+            (examples: meat, seafood, pasta, flour, dairy products, grains, 
+            vegetables, wine, beer, cooking oil, stock, cocoa powder, sugar,
+            lemon juice, herbs, jam, frozen pizza)
    - false = not typically used as an ingredient in recipes
-            (examples: cola soft drink, energy drink, cleaning products,
-                       non-food items, packaging-only items)
+            (examples: water, cola soft drink, energy drink, coffee,
+                cleaning products, non-food items, packaging-only items)
 
 2) diet_type (string):
    - "vegan"       = contains no animal products (no meat, fish, dairy, eggs, honey, gelatin, etc.)
@@ -46,25 +51,23 @@ For each English ingredient name, decide:
    - "normal"      = contains meat, fish, seafood, gelatin, or other non-vegetarian ingredients,
                      OR unclear/mixed (when in doubt, choose "normal").
 
-3) use_cooking (boolean):
-   - true  = commonly used in savory / general cooking (stir-fries, stews, sauces, roasts, etc.).
-   - false = not normally used in cooking.
-
-4) use_baking (boolean):
+3) use_baking (boolean):
    - true  = commonly used in baking or desserts (cakes, cookies, breads, pastries, sweets).
    - false = rarely used in baking.
 
-5) use_drinks (boolean):
+4) use_drinks (boolean):
    - true  = commonly used in drinks (cocktails, smoothies, teas, coffees, punches, etc.).
             Includes many alcohols (wine, rum, vodka, liqueurs) and juices.
    - false = not usually used directly in drink recipes.
 
-A single ingredient can have multiple true flags, e.g.:
-- "egg"      -> use_cooking = true, use_baking = true, use_drinks = false
-- "milk"     -> use_cooking = true, use_baking = true, use_drinks = true
-- "red wine" -> use_cooking = true, use_baking = maybe true, use_drinks = true
+A single ingredient can have both flags true, or neither — an ingredient used
+only in ordinary savoury cooking has neither, e.g.:
+- "onion"    -> use_baking = false, use_drinks = false
+- "egg"      -> use_baking = true,  use_drinks = false
+- "milk"     -> use_baking = true,  use_drinks = true
+- "red wine" -> use_baking = false, use_drinks = true
 
-If you are not sure about a usage category, set it to false.
+If you are not sure about a usage category, set it to NULL.
 """
 
 USER_PROMPT_TEMPLATE = """
@@ -83,7 +86,6 @@ Each line must be a JSON object with this shape:
   "ingredient_en": "<ingredient name>",
   "can_cook": true or false,
   "diet_type": "vegan" or "vegetarian" or "normal",
-  "use_cooking": true or false,
   "use_baking": true or false,
   "use_drinks": true or false
 }}
@@ -107,6 +109,8 @@ def classify_ingredients_batch(
     """
     all_records: list[dict] = []
     batch_count = (len(ingredients) + batch_size - 1) // batch_size
+    
+    max_tokens=batch_size * TOKENS_PER_RECORD,   # 1200 at 
 
     for index, start in enumerate(range(0, len(ingredients), batch_size), start=1):
         batch = ingredients[start : start + batch_size]
@@ -123,7 +127,7 @@ def classify_ingredients_batch(
                 },
             ],
             model=model,
-            max_tokens=800,
+            max_tokens=max_tokens,
             client=client,
         )
 

@@ -193,7 +193,6 @@ class Offer(Base):
     # and selection has to be able to tell "not usable" from "never classified".
     can_cook: Mapped[bool | None] = mapped_column(Boolean)
     diet_type: Mapped[str | None] = mapped_column(String(20))
-    use_cooking: Mapped[bool | None] = mapped_column(Boolean)
     use_baking: Mapped[bool | None] = mapped_column(Boolean)
     use_drinks: Mapped[bool | None] = mapped_column(Boolean)
 
@@ -229,7 +228,6 @@ class NormalizationCache(Base):
     ingredient_en: Mapped[str | None] = mapped_column(String(120))
     can_cook: Mapped[bool | None] = mapped_column(Boolean)
     diet_type: Mapped[str | None] = mapped_column(String(20))
-    use_cooking: Mapped[bool | None] = mapped_column(Boolean)
     use_baking: Mapped[bool | None] = mapped_column(Boolean)
     use_drinks: Mapped[bool | None] = mapped_column(Boolean)
 

@@ -22,11 +22,14 @@ DIET_ALLOWED = {
     "normal": {"vegan", "vegetarian", "normal"},
 }
 
+# The classifier flags the specialised uses only. Ordinary savoury cooking is
+# the residual case, so "cooking" filters on nothing beyond can_cook.
 USE_COLUMNS = {
-    "cooking": "use_cooking",
     "baking": "use_baking",
     "drinks": "use_drinks",
 }
+
+USE_CHOICES = ("cooking", *USE_COLUMNS)
 
 
 def cookable(df: pd.DataFrame) -> pd.DataFrame:
@@ -42,12 +45,13 @@ def select_items(
     """Filter offers by diet and use case.
 
     diet_type: one of DIET_TYPES — "normal" admits every item.
-    use: one of USE_COLUMNS — which usage flag must be true.
+    use: one of USE_CHOICES. "baking" and "drinks" require that flag;
+        "cooking" is the residual case and adds no filter of its own.
     """
     if diet_type not in DIET_ALLOWED:
         raise ValueError(f"unknown diet_type {diet_type!r}; expected one of {DIET_TYPES}")
-    if use not in USE_COLUMNS:
-        raise ValueError(f"unknown use {use!r}; expected one of {tuple(USE_COLUMNS)}")
+    if use not in USE_CHOICES:
+        raise ValueError(f"unknown use {use!r}; expected one of {USE_CHOICES}")
 
     before = len(df)
 
@@ -57,7 +61,8 @@ def select_items(
     df = df[df["diet_type"].isin(DIET_ALLOWED[diet_type])]
     after_diet = len(df)
 
-    df = df[df[USE_COLUMNS[use]] == True]  # pandas mask, not a bool test
+    if use in USE_COLUMNS:
+        df = df[df[USE_COLUMNS[use]] == True]  # pandas mask, not a bool test
 
     # The attrition chain is the whole story when a run returns no recipes.
     log.info(
