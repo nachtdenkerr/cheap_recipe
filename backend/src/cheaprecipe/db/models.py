@@ -191,8 +191,9 @@ class Offer(Base):
 
     # normalization/classify.py — nullable because a batch can come back short,
     # and selection has to be able to tell "not usable" from "never classified".
+    # No diet: an item satisfies many diets at once, so it is decided on the
+    # recipe via Spoonacular's `diet` filter, not stored per item.
     can_cook: Mapped[bool | None] = mapped_column(Boolean)
-    diet_type: Mapped[str | None] = mapped_column(String(20))
     use_baking: Mapped[bool | None] = mapped_column(Boolean)
     use_drinks: Mapped[bool | None] = mapped_column(Boolean)
 
@@ -227,7 +228,6 @@ class NormalizationCache(Base):
 
     ingredient_en: Mapped[str | None] = mapped_column(String(120))
     can_cook: Mapped[bool | None] = mapped_column(Boolean)
-    diet_type: Mapped[str | None] = mapped_column(String(20))
     use_baking: Mapped[bool | None] = mapped_column(Boolean)
     use_drinks: Mapped[bool | None] = mapped_column(Boolean)
 

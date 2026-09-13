@@ -7,54 +7,11 @@ validation error is the signal that it did not.
 """
 
 from datetime import date
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# A closed set the critic and the UI can both rely on; DIET_TYPES in
-# selection/select.py is the matching vocabulary on the offers side.
-CookingLevel = Literal["easy", "medium", "hard"]
-DietType = Literal[
-    "gluten-free",
-    "ketogenic",
-    "vegan",
-    "vegetarian",
-    "lacto-vegetarian",
-    "ovo-vegetarian",
-    "pescetarian",
-    "paleo",
-    "primal",
-    "normal"
-    ]
-Cuisine = Literal[
-    "African",
-    "Asian",
-    "American",
-    "British",
-    "Cajun",
-    "Caribbean",
-    "Chinese",
-    "Eastern European",
-    "European",
-    "French",
-    "German",
-    "Greek",
-    "Indian",
-    "Irish",
-    "Italian",
-    "Japanese",
-    "Jewish",
-    "Korean",
-    "Latin American",
-    "Mediterranean",
-    "Mexican",
-    "Middle Eastern",
-    "Nordic",
-    "Southern",
-    "Spanish",
-    "Thai",
-    "Vietnamese",
-]
+# The vocabularies are shared with the offer side — see cheaprecipe.vocabulary.
+from cheaprecipe.vocabulary import CookingLevel, Cuisine, DietType
 
 
 class Quantity(BaseModel):

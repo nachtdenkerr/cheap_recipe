@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from cheaprecipe import vocabulary
 from cheaprecipe.config import DATA_DIR
 from cheaprecipe.ingestion import edeka
 from cheaprecipe.logging_setup import setup_logging, stage
@@ -84,6 +85,7 @@ def build_recipes(
     diet_type: str = "normal",
     use: str = "cooking",
     number: int = retrieval.DEFAULT_RECIPE_NUMBER,
+    cuisine: list[str] | None = None,
 ) -> list[dict]:
     """Select from the classified offers and retrieve candidate recipes."""
     offers_path = Path(offers_path or DATA_DIR / CLASSIFIED_CSV)
@@ -97,14 +99,24 @@ def build_recipes(
         df = pd.read_csv(offers_path)
         log.info("read %d classified offers", len(df))
 
-    with stage("select_items", log, diet=diet_type, use=use):
-        selected = select.select_items(df, diet_type=diet_type, use=use)
+    with stage("select_items", log, use=use):
+        selected = select.select_items(df, use=use)
         names = select.ingredient_names(
             selected, limit=retrieval.DEFAULT_MAX_INGREDIENTS
         )
 
-    with stage("retrieve_recipes", log, number=number):
-        recipes = retrieval.find_by_ingredients(names, number=number)
+    diet = vocabulary.spoonacular_diet(diet_type)
+
+    with stage("retrieve_recipes", log, number=number, diet=diet):
+        if diet or cuisine:
+            # complexSearch is the only endpoint that filters by diet or
+            # cuisine. Offers carry neither, so a preference that does not
+            # reach this call is a preference that is silently ignored.
+            recipes = retrieval.complex_search(
+                names, number=number, cuisine=cuisine, diet=diet
+            )
+        else:
+            recipes = retrieval.find_by_ingredients(names, number=number)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
@@ -137,10 +149,22 @@ def _parser() -> argparse.ArgumentParser:
     recipes = subparsers.add_parser("recipes", help="retrieve recipes for the offers")
     recipes.add_argument("--offers", type=Path, default=DATA_DIR / CLASSIFIED_CSV)
     recipes.add_argument("--out", type=Path, default=DATA_DIR / RECIPES_JSON)
-    recipes.add_argument("--diet", default="normal", choices=select.DIET_TYPES)
+    recipes.add_argument(
+        "--diet",
+        default="normal",
+        choices=vocabulary.DIET_TYPES,
+        help="filters the recipes, not the offers; anything but 'normal' implies "
+             "complexSearch",
+    )
     recipes.add_argument("--use", default="cooking", choices=select.USE_CHOICES)
     recipes.add_argument("--number", type=int, default=retrieval.DEFAULT_RECIPE_NUMBER)
-
+    recipes.add_argument(
+        "--cuisine",
+        action="append",
+        choices=vocabulary.CUISINES,
+        help="repeatable; implies complexSearch, the only endpoint that filters "
+             "by cuisine (several cuisines go in one request, as OR)",
+    )
     return parser
 
 
@@ -162,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
                 diet_type=args.diet,
                 use=args.use,
                 number=args.number,
+                cuisine=args.cuisine,
             )
     except Exception:  # noqa: BLE001 — the CLI boundary reports every failure
         # The failing stage already logged the traceback; exit non-zero without

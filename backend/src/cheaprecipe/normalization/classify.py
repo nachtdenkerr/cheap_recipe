@@ -1,4 +1,10 @@
-"""Classify English ingredients: cookability, diet type, and usage flags.
+"""Classify English ingredients: cookability and usage flags.
+
+No diet here. A grocery item belongs to many diets at once — an avocado is
+vegan, gluten-free, keto and paleo — so a single label was always lossy, and
+asking an LLM for the full multi-label set is both expensive and unreliable.
+Diet is enforced where it is decidable: on the recipe, via Spoonacular's
+`diet` parameter (see matching/retrieval.py).
 
 `use_baking` and `use_drinks` mark the specialised uses; ordinary savoury
 cooking is the residual case, flagged by `can_cook` alone.
@@ -26,7 +32,6 @@ TOKENS_PER_RECORD = 60
 CLASS_COLUMNS = [
     "ingredient_en",
     "can_cook",
-    "diet_type",
     "use_baking",
     "use_drinks",
 ]
@@ -45,17 +50,11 @@ For each English ingredient name, decide:
             (examples: water, cola soft drink, energy drink, coffee,
                 cleaning products, non-food items, packaging-only items)
 
-2) diet_type (string):
-   - "vegan"       = contains no animal products (no meat, fish, dairy, eggs, honey, gelatin, etc.)
-   - "vegetarian"  = may contain dairy, eggs, or honey, but NO meat, fish, or seafood.
-   - "normal"      = contains meat, fish, seafood, gelatin, or other non-vegetarian ingredients,
-                     OR unclear/mixed (when in doubt, choose "normal").
-
-3) use_baking (boolean):
+2) use_baking (boolean):
    - true  = commonly used in baking or desserts (cakes, cookies, breads, pastries, sweets).
    - false = rarely used in baking.
 
-4) use_drinks (boolean):
+3) use_drinks (boolean):
    - true  = commonly used in drinks (cocktails, smoothies, teas, coffees, punches, etc.).
             Includes many alcohols (wine, rum, vodka, liqueurs) and juices.
    - false = not usually used directly in drink recipes.
@@ -85,7 +84,6 @@ Each line must be a JSON object with this shape:
 {{
   "ingredient_en": "<ingredient name>",
   "can_cook": true or false,
-  "diet_type": "vegan" or "vegetarian" or "normal",
   "use_baking": true or false,
   "use_drinks": true or false
 }}
@@ -102,7 +100,7 @@ def classify_ingredients_batch(
     model: str = DEFAULT_MODEL,
     client: OpenAI | None = None,
 ) -> list[dict]:
-    """Classify ingredients with can_cook, diet_type and the three use_* flags.
+    """Classify ingredients with can_cook and the two use_* flags.
 
     ingredients: list of English ingredient names
     returns: list of dicts, one per successfully parsed line
