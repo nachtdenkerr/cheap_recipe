@@ -4,10 +4,10 @@ Two halves that meet at `CanonicalIngredient`:
 
 - the ingestion side (`Supermarket` -> `Address` -> `Offer`) stores what the
   scraper found, one row per offer per store per validity window;
-- the recipe side (`Recipe` -> `RecipeIngredient`) stores what retrieval and
+- the recipe side (`RecipeCache` -> `RecipeIngredient`) stores what retrieval and
   the agents produced.
 
-`NormalizationCache` sits between them so a German product title is sent to the
+`NormalizationCache` sits between them so a German product tFitle is sent to the
 LLM once, not once per weekly run.
 """
 
@@ -37,7 +37,7 @@ class Base(DeclarativeBase):
 recipe_appliance = Table(
     "recipe_appliance",
     Base.metadata,
-    Column("recipe_id", ForeignKey("recipe.id", ondelete="CASCADE"), primary_key=True),
+    Column("recipe_id", ForeignKey("recipe_cache.id", ondelete="CASCADE"), primary_key=True),
     Column(
         "appliance_id",
         ForeignKey("cooking_appliance.id", ondelete="CASCADE"),
@@ -96,6 +96,16 @@ class User(Base):
             f"fullname={self.fullname!r}, "
             f"fav_supermarket_id={self.fav_supermarket_id!r})"
         )
+
+
+class UserRecipeFeedback(Base):
+    """
+    """
+    __tablename__ = "user_recipe_feedback"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"))
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipe_cache.id"))
+    feedback: Mapped[str] = mapped_column(String(30))
 
 
 class Supermarket(Base):
@@ -214,6 +224,32 @@ class Offer(Base):
         )
 
 
+class OfferHistory(Base):
+    """
+    The evergrowing table of offers from all possible supermarket that we can scrape.
+    The column is extracted from the description using LLM.
+    Append to the table only after that step.
+    """
+    __tablename__ = "offer_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    address_id: Mapped[int] = mapped_column(ForeignKey("address.id"))
+
+    title: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str | None] = mapped_column(String(80))
+    description: Mapped[str | None] = mapped_column(String(255))
+    price: Mapped[float]
+    price_per_unit: Mapped[float | None]
+    # What price_per_unit is per: "kg", "l" or "Stück".
+    price_per_unit_unit: Mapped[str | None] = mapped_column(String(10))
+    quantity_amount: Mapped[float | None]
+    quantity_unit: Mapped[str | None] = mapped_column(String(20))
+    # "package" (quantity_amount is what you receive) or "price_basis" (the
+    # goods are sold loose and the price is quoted per that amount).
+    quantity_basis: Mapped[str | None] = mapped_column(String(20))
+    pack_count: Mapped[int | None]
+
+
 class NormalizationCache(Base):
     """raw German title -> canonical result, so the LLM is paid for once.
 
@@ -280,7 +316,7 @@ class Cuisine(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True)
     description: Mapped[str | None] = mapped_column(String(450))
 
-    recipes: Mapped[list["Recipe"]] = relationship(back_populates="cuisine")
+    recipes: Mapped[list["RecipeCache"]] = relationship(back_populates="cuisine")
 
     def __repr__(self) -> str:
         return f"Cuisine(id={self.id!r}, name={self.name!r})"
@@ -293,7 +329,7 @@ class CookingAppliance(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True)
     description: Mapped[str | None] = mapped_column(String(250))
 
-    recipes: Mapped[list["Recipe"]] = relationship(
+    recipes: Mapped[list["RecipeCache"]] = relationship(
         secondary=recipe_appliance, back_populates="appliances"
     )
 
@@ -301,8 +337,8 @@ class CookingAppliance(Base):
         return f"CookingAppliance(id={self.id!r}, name={self.name!r})"
 
 
-class Recipe(Base):
-    __tablename__ = "recipe"
+class RecipeCache(Base):
+    __tablename__ = "recipe_cache"
     __table_args__ = (
         # Spoonacular returns the same recipe across runs; this is what makes
         # retrieval idempotent.
@@ -335,14 +371,14 @@ class Recipe(Base):
         secondary=recipe_appliance, back_populates="recipes"
     )
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(
-        back_populates="recipe", cascade="all, delete-orphan"
+        back_populates="recipe_cache", cascade="all, delete-orphan"
     )
     generations: Mapped[list["Generation"]] = relationship(
         secondary=generation_recipe, back_populates="recipes"
     )
 
     def __repr__(self) -> str:
-        return f"Recipe(id={self.id!r}, name={self.name!r}, source={self.source!r})"
+        return f"RecipeCache(id={self.id!r}, name={self.name!r}, source={self.source!r})"
 
 
 class RecipeIngredient(Base):
@@ -355,7 +391,7 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredient"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipe.id", ondelete="CASCADE"))
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipe_cache.id", ondelete="CASCADE"))
     canonical_ingredient_id: Mapped[int | None] = mapped_column(
         ForeignKey("canonical_ingredient.id")
     )
@@ -365,7 +401,7 @@ class RecipeIngredient(Base):
     unit: Mapped[str | None] = mapped_column(String(20))
     optional: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    recipe: Mapped["Recipe"] = relationship(back_populates="ingredients")
+    recipe: Mapped["RecipeCache"] = relationship(back_populates="ingredients")
     canonical_ingredient: Mapped["CanonicalIngredient | None"] = relationship(
         back_populates="recipe_ingredients"
     )
@@ -375,7 +411,6 @@ class RecipeIngredient(Base):
             f"RecipeIngredient(recipe_id={self.recipe_id!r}, name={self.name!r}, "
             f"amount={self.amount!r}, unit={self.unit!r})"
         )
-
 
 # --- agent output -----------------------------------------------------------
 
@@ -409,7 +444,7 @@ class Generation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User | None"] = relationship(back_populates="generations")
-    recipes: Mapped[list["Recipe"]] = relationship(
+    recipes: Mapped[list["RecipeCache"]] = relationship(
         secondary=generation_recipe, back_populates="generations"
     )
     items: Mapped[list["GenerationItem"]] = relationship(
