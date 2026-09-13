@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 FIND_BY_INGREDIENTS_URL = "https://api.spoonacular.com/recipes/findByIngredients"
 COMPLEX_SEARCH_URL = "https://api.spoonacular.com/recipes/complexSearch"
 
-DEFAULT_MAX_INGREDIENTS = 80
+DEFAULT_MAX_INGREDIENTS = 120
 DEFAULT_RECIPE_NUMBER = 40
 
 # Spoonacular caps a single page at 100.
