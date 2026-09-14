@@ -59,39 +59,49 @@ downstream of it is scaffolded but not yet written:
 | `calculation/` nutrition, cost, waste, allergens | stub |
 | `ranking/`, `db/`, `observability/`, `app/` API, `frontend/` | stub |
 
-Known rough edges: the EDEKA endpoint is reached with a captured browser
-session, so the cookies in `ingestion/edeka.py` go stale and need recapturing;
-one market is hardcoded as the default; and the recipe API is queried with only
-the ten cheapest ingredients.
+Known rough edges: the EDEKA endpoint is undocumented, so it can change
+shape without notice; one market is hardcoded as the default; and the recipe API
+is queried with only the ten cheapest ingredients.
 
 ## Getting started
 
-Requires Python 3.9+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cd backend
 uv sync --extra dev
 ```
 
-Put your keys in `keys.env` at the repo root (gitignored):
+Put your keys in `.env` at the repo root (gitignored):
 
 ```text
 OPENROUTER_API_KEY=...
 SPOONACULAR_API_KEY=...
 ```
 
+The EDEKA offers endpoint needs no credentials — no cookie, no key. One caveat:
+do not give it a spoofed browser user-agent. The edge rejects a request claiming
+to be Chrome or Firefox without a matching TLS fingerprint, so adding a browser
+UA causes the 403 it looks like it should prevent.
+
 Then run the pipeline:
 
 ```bash
 # fetch offers → clean → translate → classify, writing a CSV per stage to data/
-uv run python scripts/fetch_edeka.py
+uv run cheaprecipe offers
 
 # skip the LLM stages (no API spend, no network beyond EDEKA)
-uv run python scripts/fetch_edeka.py --skip-llm
+uv run cheaprecipe offers --skip-llm
 
 # retrieve recipes for the classified offers
-uv run python scripts/load_recipes.py --diet vegetarian --use cooking
+uv run cheaprecipe recipes --diet vegetarian --use cooking
 ```
+
+Both commands run through `src/cheaprecipe/pipeline.py`, which is the only
+orchestration layer — there is no `scripts/` directory. Every stage logs what it
+started, what it produced, and how many records it dropped on the way; add `-v`
+for per-batch LLM calls, token counts and HTTP detail. A failure logs the
+traceback against the stage that raised it and exits non-zero.
 
 Every model call goes through `src/cheaprecipe/llm.py`, which points the OpenAI
 SDK at OpenRouter. Changing model or vendor is one line there.
@@ -124,13 +134,13 @@ cheap_recipe/
       ranking/            # phase-2 seam, trivial heuristic for now
       db/                 # models, repositories, migrations
       observability/      # Langfuse client + decorators
-      config.py  llm.py   # keys.env loading, OpenRouter client
+      config.py  llm.py   # .env loading, OpenRouter client
+      pipeline.py         # stage orchestration + `cheaprecipe` CLI
+      logging_setup.py    # rich console logging, stage() timer
     tests/                # deterministic (assert on calculation) + LLM evals
-    scripts/              # seed_db, load_recipes, fetch_edeka (thin, import src)
     data/                 # seed files + local dev SQLite (gitignored .db)
     pyproject.toml        # uv
   frontend/               # separate npm project
-  workflow.ipynb          # the original prototype the pipeline came from
 ```
 
 `app/` may import `src/cheaprecipe`; the reverse is never allowed. That keeps

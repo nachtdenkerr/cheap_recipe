@@ -7,12 +7,16 @@ which is what lets us swap vendors without touching call sites.
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from functools import lru_cache
 
 from openai import OpenAI
 
 from cheaprecipe.config import load_keys, openrouter_api_key
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -23,7 +27,7 @@ DEFAULT_MODEL = "openai/gpt-4.1-mini"
 def get_client() -> OpenAI:
     """Shared OpenRouter client.
 
-    OPENROUTER_API_KEY comes from keys.env. The two optional headers below are
+    OPENROUTER_API_KEY comes from .env. The two optional headers below are
     what OpenRouter attributes usage to on its public leaderboards.
     """
     load_keys()
@@ -31,7 +35,7 @@ def get_client() -> OpenAI:
     api_key = openrouter_api_key()
     if not api_key:
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not set — add it to keys.env at the repo root."
+            "OPENROUTER_API_KEY is not set — add it to .env at the repo root."
         )
 
     headers = {}
@@ -60,9 +64,34 @@ def complete(
     """
     client = client or get_client()
 
+    started = time.perf_counter()
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         max_tokens=max_tokens,
     )
-    return (response.choices[0].message.content or "").strip()
+    elapsed = time.perf_counter() - started
+    choice = _log_response(response, model, max_tokens, elapsed)
+
+    return (choice.message.content or "").strip()
+
+
+def _log_response(response, model: str, max_tokens: int, elapsed: float):
+    """Report timing, token use and truncation; return the first choice."""
+    usage = getattr(response, "usage", None)
+    log.debug(
+        "%s completed in %.2fs (prompt=%s, completion=%s tokens)",
+        model,
+        elapsed,
+        getattr(usage, "prompt_tokens", "?"),
+        getattr(usage, "completion_tokens", "?"),
+    )
+
+    choice = response.choices[0]
+    if choice.finish_reason == "length":
+        # A truncated response is the usual cause of dropped batch records
+        # downstream, and nothing else surfaces it.
+        log.warning(
+            "%s hit the %d-token cap — the response is truncated", model, max_tokens
+        )
+    return choice

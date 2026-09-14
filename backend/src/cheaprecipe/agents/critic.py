@@ -1,5 +1,7 @@
-"""Critic agent: reviews a proposed recipe and returns actionable feedback."""
+"""Critic agent: reviews a proposed meal plan and returns actionable feedback."""
+
+from cheaprecipe.agents.contracts import Critique, Plan
 
 
-def critique(recipe: dict) -> dict:
+def critique(plan: Plan) -> Critique:
     raise NotImplementedError

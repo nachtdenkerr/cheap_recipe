@@ -7,7 +7,13 @@ title -> English ingredient) lives in `ingredients.py`.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+from cheaprecipe.normalization import quantity
+
+log = logging.getLogger(__name__)
 
 # Categories that never produce a recipe ingredient.
 EXCLUDED_CATEGORIES = ["Drogerie", "Tiernahrung", "Non-Food"]
@@ -42,10 +48,36 @@ def extract_weekday_from_title(title: str | None) -> int | None:
 
 def drop_non_food(df: pd.DataFrame) -> pd.DataFrame:
     """Remove the categories and descriptions that are not food."""
-    df = df[~df["category"].isin(EXCLUDED_CATEGORIES)]
+    excluded = df["category"].isin(EXCLUDED_CATEGORIES)
+    if excluded.any():
+        by_category = df.loc[excluded, "category"].value_counts().to_dict()
+        log.info("dropped %d non-food offers by category: %s", int(excluded.sum()), by_category)
+    df = df[~excluded]
+
     for term in EXCLUDED_DESCRIPTION_TERMS:
-        df = df[~df["descriptions"].str.contains(term, na=False)]
+        matches = df["descriptions"].str.contains(term, na=False)
+        if matches.any():
+            log.info("dropped %d offers matching description term %r", int(matches.sum()), term)
+        df = df[~matches]
+
     return df
+
+
+def drop_unpriced(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove offers the payload carries no price for.
+
+    These are percentage-discount promotions ("20% off"), which quote no
+    absolute price. A 0.00 would otherwise read as free and win every ranking,
+    and nothing downstream can derive a price per unit for them.
+    """
+    unpriced = df["price"].isna() | (df["price"] <= 0)
+    if unpriced.any():
+        examples = df.loc[unpriced, "title"].head(3).tolist()
+        log.info(
+            "dropped %d offers with no price (discount promotions), e.g. %s",
+            int(unpriced.sum()), examples,
+        )
+    return df[~unpriced]
 
 
 def normalize(df: pd.DataFrame) -> pd.DataFrame:
@@ -62,8 +94,15 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     df["price"] = df["price"].astype(float)
 
     df["weekday_in_title"] = df["title"].apply(extract_weekday_from_title)
+    log.debug(
+        "%d/%d titles name a weekday", int(df["weekday_in_title"].notna().sum()), len(df)
+    )
 
     df["validTill"] = pd.to_datetime(df["validTill"], errors="coerce")
+    undated = int(df["validTill"].isna().sum())
+    if undated:
+        # validFrom is derived from validTill, so these end up undated too.
+        log.warning("%d/%d offers have no usable validTill — validFrom will be NaT", undated, len(df))
     current_weekday = df["validTill"].dt.weekday
     weekday_target = df["weekday_in_title"].fillna(DEFAULT_WEEKDAY)
 
@@ -83,7 +122,13 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_offers(df: pd.DataFrame) -> pd.DataFrame:
-    """Full deterministic pass: drop non-food, normalize, sort."""
+    """Full deterministic pass: drop non-food and unpriced, normalize, sort,
+    then parse quantity and price per unit out of the descriptions."""
+    before = len(df)
     df = drop_non_food(df)
+    df = drop_unpriced(df)
     df = normalize(df)
-    return df.sort_values(by=["category", "title"]).reset_index(drop=True)
+    df = df.sort_values(by=["category", "title"]).reset_index(drop=True)
+    df = quantity.add_quantity_columns(df)
+    log.info("cleaned offers: %d in -> %d out (%d dropped)", before, len(df), before - len(df))
+    return df
