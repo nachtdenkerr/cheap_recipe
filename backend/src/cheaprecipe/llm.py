@@ -71,7 +71,13 @@ def complete(
         max_tokens=max_tokens,
     )
     elapsed = time.perf_counter() - started
+    choice = _log_response(response, model, max_tokens, elapsed)
 
+    return (choice.message.content or "").strip()
+
+
+def _log_response(response, model: str, max_tokens: int, elapsed: float):
+    """Report timing, token use and truncation; return the first choice."""
     usage = getattr(response, "usage", None)
     log.debug(
         "%s completed in %.2fs (prompt=%s, completion=%s tokens)",
@@ -88,5 +94,4 @@ def complete(
         log.warning(
             "%s hit the %d-token cap — the response is truncated", model, max_tokens
         )
-
-    return (choice.message.content or "").strip()
+    return choice

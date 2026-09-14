@@ -12,6 +12,7 @@ dependencies = [
     "requests",
     "python-dotenv",
     "openai",
+    "pydantic-ai-slim[openai]>=2.43,<3",
     "langfuse",
     "rich",
 ]
