@@ -2,8 +2,8 @@
 
 import json
 import logging
-import pandas as pd
-from cheaprecipe.agents.contracts import Recipe, Ingredient, Quantity
+
+from cheaprecipe.agents.contracts import Ingredient, Quantity, Recipe
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def parse_recipe_json(json_path: str) -> list[Recipe]:
     recipe_list = []
 
     if not recipe_dict:
-        raise ValueError(f"No recipe retrived.")
+        raise ValueError("No recipe retrived.")
 
     for index, recipe in enumerate(recipe_dict, start=1):
         ingredient_list = parse_ingredient_json(
@@ -51,7 +51,7 @@ def parse_recipe_json(json_path: str) -> list[Recipe]:
             recipe["usedIngredients"]
             )
         if not ingredient_list:
-            raise ValueError(f"No ingredient parsed.")
+            raise ValueError("No ingredient parsed.")
         try:
             recipe = Recipe(
                 name=recipe["title"],

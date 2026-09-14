@@ -1,6 +1,6 @@
 """Orchestrator: runs planner -> critic until the recipe passes or budget runs out."""
 
-from cheaprecipe.agents.contracts import Plan, Recipe, Ingredient, Quantity
+from cheaprecipe.agents.contracts import Plan, Recipe
 
 MAX_ROUNDS = 3
 

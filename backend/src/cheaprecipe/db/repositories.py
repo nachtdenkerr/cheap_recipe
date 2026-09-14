@@ -1,6 +1,6 @@
 """Repository functions — the only place that talks to the session."""
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 engine = create_engine("sqlite://", echo=True)

@@ -1,6 +1,7 @@
 """Allergen filter — deterministic, never delegated to the LLM."""
 
-from cheaprecipe.agents.contracts import Recipe, Ingredient
+from cheaprecipe.agents.contracts import Recipe
+
 
 def filter_recipes(
     recipes: list[Recipe],
@@ -11,6 +12,7 @@ def filter_recipes(
     accepted_list = []
     for recipe in recipes:
         for ingredient in recipe.ingredients:
+            #TODO: continue will just skip the ingredient, not the recipe
             if ingredient.name in excluded_allergens:
                 continue
         accepted_list.append(recipe)

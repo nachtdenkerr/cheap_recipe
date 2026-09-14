@@ -1,6 +1,9 @@
-import logging, time
+import logging
+import time
 from contextlib import contextmanager
+
 from rich.logging import RichHandler
+
 
 def setup_logging(level="INFO"):
     logging.basicConfig(
