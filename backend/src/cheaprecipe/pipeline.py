@@ -1,4 +1,4 @@
-"""End-to-end pipeline: EDEKA offers -> candidate recipes.
+"""End-to-end pipeline: supermarket offers -> candidate recipes.
 
 Two stages-of-stages, each runnable on its own:
 
@@ -9,6 +9,7 @@ A CSV is written after every step so a failed or expensive LLM step can be
 rerun against the checkpoint instead of re-fetching everything upstream.
 
     uv run cheaprecipe offers
+    uv run cheaprecipe offers --store aldi
     uv run cheaprecipe offers --skip-llm      # deterministic steps only
     uv run cheaprecipe recipes --diet vegetarian --use cooking
 """
@@ -24,7 +25,7 @@ import pandas as pd
 
 from cheaprecipe import vocabulary
 from cheaprecipe.config import DATA_DIR
-from cheaprecipe.ingestion import edeka
+from cheaprecipe.ingestion import aldi, edeka
 from cheaprecipe.logging_setup import setup_logging, stage
 from cheaprecipe.matching import retrieval
 from cheaprecipe.normalization import classify, ingredients, normalize
@@ -44,25 +45,46 @@ def _checkpoint(df: pd.DataFrame, path: Path) -> None:
     log.info("%d rows -> %s", len(df), path)
 
 
+def _fetch_offers(store: vocabulary.Store, store_id: str | None) -> pd.DataFrame:
+    """Run one chain's ingestion module and return its raw offers frame.
+
+    Both modules expose the same fetch/parse pair over the same five columns;
+    all that differs is what identifies the range — a market for EDEKA, a
+    category for ALDI — so `store_id` carries whichever one applies.
+    """
+    if store == "edeka":
+        module, identifier = edeka, store_id or edeka.DEFAULT_MARKET_ID
+        payload = module.fetch_offers(market_id=identifier)
+    else:
+        module, identifier = aldi, store_id or aldi.DEFAULT_CATEGORY_ID
+        payload = module.fetch_offers(category_id=identifier)
+
+    log.debug("%s offers for id %s", store, identifier)
+    return module.parse_offers(payload)
+
+
 def build_offers(
     out_dir: Path = DATA_DIR,
-    market_id: str = edeka.DEFAULT_MARKET_ID,
+    store: vocabulary.Store = "edeka",
+    store_id: str | None = None,
     skip_llm: bool = False,
 ) -> pd.DataFrame:
     """Fetch the current offers and carry them through to classification.
+
+    `store` selects the chain, and travels with the frame as far as
+    `clean_offers`, which needs it to know that chain's non-food vocabulary.
 
     Returns the frame from the last step that ran — classified, or merely
     cleaned when skip_llm is set.
     """
     out_dir = Path(out_dir)
 
-    with stage("fetch_offers", log, market_id=market_id):
-        payload = edeka.fetch_offers(market_id=market_id)
-        df = edeka.parse_offers(payload)
+    with stage("fetch_offers", log, store=store, store_id=store_id):
+        df = _fetch_offers(store, store_id)
         _checkpoint(df, out_dir / RAW_CSV)
 
-    with stage("clean_offers", log):
-        df = normalize.clean_offers(df)
+    with stage("clean_offers", log, store=store):
+        df = normalize.clean_offers(df, store)
 
     if skip_llm:
         log.info("--skip-llm: stopping after the deterministic steps")
@@ -139,7 +161,19 @@ def _parser() -> argparse.ArgumentParser:
 
     offers = subparsers.add_parser("offers", help="fetch, clean and classify offers")
     offers.add_argument("--out-dir", type=Path, default=DATA_DIR)
-    offers.add_argument("--market-id", default=edeka.DEFAULT_MARKET_ID)
+    offers.add_argument(
+        "--store",
+        default="edeka",
+        choices=vocabulary.STORES,
+        help="which chain to fetch from; also picks the non-food vocabulary "
+             "applied when cleaning",
+    )
+    offers.add_argument(
+        "--store-id",
+        help="the range to fetch: EDEKA's market id (default "
+             f"{edeka.DEFAULT_MARKET_ID}) or ALDI's category id (default "
+             f"{aldi.DEFAULT_CATEGORY_ID})",
+    )
     offers.add_argument(
         "--skip-llm",
         action="store_true",
@@ -176,7 +210,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "offers":
             build_offers(
                 out_dir=args.out_dir,
-                market_id=args.market_id,
+                store=args.store,
+                store_id=args.store_id,
                 skip_llm=args.skip_llm,
             )
         else:

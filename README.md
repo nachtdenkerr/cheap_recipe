@@ -14,10 +14,10 @@ texture, a cut and a preparation note glued together — no recipe API has ever
 heard of it. So the pipeline earns its keep in the middle:
 
 ```text
-EDEKA offers          →  ingestion/      raw JSON from the store's offers endpoint
+store offers          →  ingestion/      EDEKA's offers endpoint, or ALDI's page
   ↓                                      189 offers this week
-drop the non-food     →  normalization/  Drogerie, Tiernahrung, cookware, decor
-  ↓                                      165 left
+drop the non-food     →  normalization/  each chain's own departments, per
+  ↓                                      excluded_categories.yml — 165 left
 tidy + date the offer →  normalization/  "Ab Donnerstag erhältlich: Grana Padano"
   ↓                                      → title + validFrom = Thursday
 German → ingredient   →  normalization/  LLM: → "grana padano cheese"
@@ -51,7 +51,7 @@ downstream of it is scaffolded but not yet written:
 
 | Stage | State |
 | --- | --- |
-| `ingestion/` EDEKA fetch + parse | works |
+| `ingestion/` EDEKA + ALDI SÜD fetch/parse | works |
 | `normalization/` cleaning, translation, classification | works |
 | `selection/` diet and use-case filtering | works |
 | `matching/` Spoonacular retrieval | works |
@@ -59,9 +59,10 @@ downstream of it is scaffolded but not yet written:
 | `calculation/` nutrition, cost, waste, allergens | stub |
 | `ranking/`, `db/`, `observability/`, `app/` API, `frontend/` | stub |
 
-Known rough edges: the EDEKA endpoint is undocumented, so it can change
-shape without notice; one market is hardcoded as the default; and the recipe API
-is queried with only the ten cheapest ingredients.
+Known rough edges: neither source is a documented API, so both can change shape
+without notice; one market and one ALDI category are hardcoded as the defaults;
+ALDI publishes no offer end date, so its rows carry no `validTill`; and the
+recipe API is queried with only the ten cheapest ingredients.
 
 ## Getting started
 
@@ -79,10 +80,14 @@ OPENROUTER_API_KEY=...
 SPOONACULAR_API_KEY=...
 ```
 
-The EDEKA offers endpoint needs no credentials — no cookie, no key. One caveat:
-do not give it a spoofed browser user-agent. The edge rejects a request claiming
-to be Chrome or Firefox without a matching TLS fingerprint, so adding a browser
-UA causes the 403 it looks like it should prevent.
+Neither store needs credentials — no cookie, no key. One caveat for EDEKA: do
+not give it a spoofed browser user-agent. The edge rejects a request claiming to
+be Chrome or Firefox without a matching TLS fingerprint, so adding a browser UA
+causes the 403 it looks like it should prevent.
+
+ALDI SÜD has no offers endpoint at all: its commerce API is not reachable
+without the front end's own credentials, so `ingestion/aldi.py` reads the
+offers out of the `__NUXT_DATA__` payload the category page server-renders.
 
 Then run the pipeline:
 
@@ -90,7 +95,10 @@ Then run the pipeline:
 # fetch offers → clean → translate → classify, writing a CSV per stage to data/
 uv run cheaprecipe offers
 
-# skip the LLM stages (no API spend, no network beyond EDEKA)
+# the same, from ALDI SÜD's weekly offers
+uv run cheaprecipe offers --store aldi
+
+# skip the LLM stages (no API spend, no network beyond the store)
 uv run cheaprecipe offers --skip-llm
 
 # retrieve recipes for the classified offers
@@ -125,7 +133,7 @@ cheap_recipe/
       routers/  (auth, generate, recipes, shopping, nutrition)
       schemas/  deps.py  main.py
     src/cheaprecipe/
-      ingestion/          # EDEKA fetch/parse
+      ingestion/          # EDEKA + ALDI SÜD fetch/parse
       normalization/      # raw→canonical (+ cache table logic)
       selection/          # pick items per category by preference
       matching/           # recipe↔ingredient index, candidate retrieval
@@ -135,6 +143,8 @@ cheap_recipe/
       db/                 # models, repositories, migrations
       observability/      # Langfuse client + decorators
       config.py  llm.py   # .env loading, OpenRouter client
+      vocabulary.py       # the closed vocabularies + store config loader
+      excluded_categories.yml  # per-chain non-food departments, editable
       pipeline.py         # stage orchestration + `cheaprecipe` CLI
       logging_setup.py    # rich console logging, stage() timer
     tests/                # deterministic (assert on calculation) + LLM evals

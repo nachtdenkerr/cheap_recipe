@@ -1,7 +1,9 @@
 """Deterministic tests for the normalization stage — no LLM, no network."""
 
 import pandas as pd
+import pytest
 
+from cheaprecipe import vocabulary
 from cheaprecipe.normalization import normalize
 
 
@@ -9,6 +11,12 @@ def test_extract_weekday_from_title():
     assert normalize.extract_weekday_from_title("Ab Donnerstag erhältlich: Grana Padano") == 3
     assert normalize.extract_weekday_from_title("Avocados") is None
     assert normalize.extract_weekday_from_title(None) is None
+
+
+def test_every_store_has_an_excluded_category_entry():
+    """The loader raises on a missing entry, so a new store cannot be half-added."""
+    for store in vocabulary.STORES:
+        assert vocabulary.excluded_categories(store)
 
 
 def test_drop_non_food():
@@ -20,9 +28,35 @@ def test_drop_non_food():
         }
     )
 
-    kept = normalize.drop_non_food(df)
+    kept = normalize.drop_non_food(df, "edeka")
 
     assert kept["title"].tolist() == ["Avocados"]
+
+
+def test_drop_non_food_uses_the_store_own_vocabulary():
+    """ALDI files pet food under its own department name, not EDEKA's."""
+    df = pd.DataFrame(
+        {
+            "title": ["Katzenstreu", "Nektarinen"],
+            "category": ["Tierbedarf", "Wochenangebote"],
+            "descriptions": ["6 l", "1 kg"],
+        }
+    )
+
+    assert normalize.drop_non_food(df, "aldi")["title"].tolist() == ["Nektarinen"]
+    # EDEKA's list does not contain "Tierbedarf", so it would keep the litter —
+    # which is exactly why `store` is required rather than defaulted.
+    assert normalize.drop_non_food(df, "edeka")["title"].tolist() == [
+        "Katzenstreu",
+        "Nektarinen",
+    ]
+
+
+def test_an_unknown_store_is_rejected():
+    df = pd.DataFrame({"title": ["Avocados"], "category": ["Obst & Gemüse"], "descriptions": ["Stück"]})
+
+    with pytest.raises(ValueError, match="Unknown store"):
+        normalize.drop_non_food(df, "rewe")
 
 
 def test_normalize_derives_valid_from_and_cleans_title():

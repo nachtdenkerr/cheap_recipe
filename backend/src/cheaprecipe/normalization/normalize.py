@@ -11,15 +11,10 @@ import logging
 
 import pandas as pd
 
+from cheaprecipe import vocabulary
 from cheaprecipe.normalization import quantity
 
 log = logging.getLogger(__name__)
-
-# Categories that never produce a recipe ingredient.
-EXCLUDED_CATEGORIES = ["Drogerie", "Tiernahrung", "Non-Food"]
-
-# Non-food items that slip through inside food categories (cookware, decor).
-EXCLUDED_DESCRIPTION_TERMS = ["Topf", "Deko"]
 
 WEEKDAY_MAP = {
     "Montag": 0,
@@ -46,15 +41,21 @@ def extract_weekday_from_title(title: str | None) -> int | None:
     return None
 
 
-def drop_non_food(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove the categories and descriptions that are not food."""
-    excluded = df["category"].isin(EXCLUDED_CATEGORIES)
+def drop_non_food(df: pd.DataFrame, store: vocabulary.Store) -> pd.DataFrame:
+    """Remove the categories and descriptions that are not food.
+
+    `store` picks the vocabulary: each chain names its departments its own way,
+    so the lists live per store in `excluded_categories.yml`. It is required
+    rather than defaulted because the wrong vocabulary does not fail — it
+    quietly matches nothing and lets every shampoo through.
+    """
+    excluded = df["category"].isin(vocabulary.excluded_categories(store))
     if excluded.any():
         by_category = df.loc[excluded, "category"].value_counts().to_dict()
         log.info("dropped %d non-food offers by category: %s", int(excluded.sum()), by_category)
     df = df[~excluded]
 
-    for term in EXCLUDED_DESCRIPTION_TERMS:
+    for term in vocabulary.excluded_description_terms(store):
         matches = df["descriptions"].str.contains(term, na=False)
         if matches.any():
             log.info("dropped %d offers matching description term %r", int(matches.sum()), term)
@@ -121,11 +122,14 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def clean_offers(df: pd.DataFrame) -> pd.DataFrame:
+def clean_offers(df: pd.DataFrame, store: vocabulary.Store) -> pd.DataFrame:
     """Full deterministic pass: drop non-food and unpriced, normalize, sort,
-    then parse quantity and price per unit out of the descriptions."""
+    then parse quantity and price per unit out of the descriptions.
+
+    `store` is the chain the frame came from; see `drop_non_food`.
+    """
     before = len(df)
-    df = drop_non_food(df)
+    df = drop_non_food(df, store)
     df = drop_unpriced(df)
     df = normalize(df)
     df = df.sort_values(by=["category", "title"]).reset_index(drop=True)

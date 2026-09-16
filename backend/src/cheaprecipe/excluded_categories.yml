@@ -1,0 +1,53 @@
+# What each chain sells that never becomes a recipe ingredient.
+#
+# Keyed by the store names in `vocabulary.Store`. `normalization.normalize`
+# reads this through `vocabulary.excluded_categories`, so adding a chain here
+# and to the Store literal is the whole of teaching the pipeline to filter it.
+#
+# `categories` are matched exactly against the `category` column, which every
+# ingestion module fills with the chain's own broad department name — not the
+# aisle. The vocabularies do not overlap between chains, so one flat list per
+# store is what keeps a rename traceable to the chain that made it.
+#
+# `description_terms` are substrings, for the non-food that hides *inside* a
+# food department: an Adventsgesteck filed under Obst & Gemüse is still a
+# flower arrangement.
+
+edeka:
+  # The full department vocabulary is: Drogerie, Fisch & Meeresfrüchte,
+  # Fleisch & Wurst, Getränke, Grundnahrung, Knabbern & Naschen,
+  # Molkerei & Käse, Non-Food, Obst & Gemüse, Sonstiges, Tiefkühl, Tiernahrung.
+  categories:
+    - Drogerie
+    - Non-Food
+    - Tiernahrung
+  description_terms:
+    - Topf
+    - Deko
+
+aldi:
+  # ALDI splits non-food far finer than EDEKA's three buckets; these are the
+  # top-level departments from the category tree under /produkte.
+  categories:
+    - Babyartikel            # including Babynahrung — jars of purée, not an ingredient
+    - Bettwäsche & Heimtextilien
+    - Blumen & Blumensträuße
+    - Camping
+    - Drogerie & Kosmetik
+    - Einrichtung & Wohnen
+    - Fahrrad & Zubehör
+    - Garten
+    - Grills & Grillzubehör
+    - Haushaltsartikel
+    - Heimwerken
+    - Kleidung
+    - Küche & Backen         # cookware and bakeware, not baking ingredients
+    - Outdoor & Freizeit
+    - Schreibwaren
+    - Spielzeug
+    - Sport & Fitness
+    - Technik & Elektronik
+    - Tierbedarf
+    - Urlaub & Strand
+  # ALDI's descriptions are a bare selling size, so there is no prose to filter.
+  description_terms: []
