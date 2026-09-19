@@ -105,7 +105,7 @@ def test_derived_base_price_matches_edeka_on_the_real_data():
     """
     # Mirror clean_offers: non-food goes first, and it is what carries the
     # quantities this parser cannot read (wash loads, sheets, a football).
-    df = normalize.drop_non_food(pd.read_csv(OFFERS_CSV))
+    df = normalize.drop_non_food(pd.read_csv(OFFERS_CSV), "edeka")
     df = normalize.drop_unpriced(df).reset_index(drop=True)
 
     mismatches = []

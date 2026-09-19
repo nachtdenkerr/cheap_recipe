@@ -10,6 +10,7 @@ dependencies = [
     "sqlalchemy",
     "pandas",
     "requests",
+    "pyyaml",
     "python-dotenv",
     "openai",
     "pydantic-ai-slim[openai]>=2.43,<3",

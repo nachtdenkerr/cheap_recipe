@@ -1,0 +1,131 @@
+/*
+ * Deck styling — the same tokens as the app (cheaprecipe-design-tokens.md),
+ * so the slides and the product read as one thing.
+ * Slidev loads ./style.css automatically.
+ */
+
+:root {
+  --color-primary: #d8382a;
+  --color-primary-contrast: #fff;
+  --color-deal: #d8382a;
+  --color-save: #5c7a3a;
+  --color-save-soft: #eef2e6;
+  --color-accent: #ef9f1a;
+  --color-bg: #fff;
+  --color-surface: #fff;
+  --color-text: #241f1c;
+  --color-muted: #7a736c;
+  --color-border: #e9e6df;
+
+  --slidev-theme-primary: var(--color-primary);
+}
+
+.slidev-layout {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3 {
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  color: var(--color-text);
+}
+
+.slidev-layout h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+}
+
+.slidev-layout h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.slidev-layout a {
+  color: var(--color-primary);
+}
+
+/* Numbers everywhere are figures to compare — line them up. */
+.slidev-layout {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- small component vocabulary, mirroring the app -------------------- */
+
+.pill {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--color-save-soft);
+  color: var(--color-save);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.pill-deal {
+  background: var(--color-deal);
+  color: #fff;
+}
+
+.pill-accent {
+  background: color-mix(in srgb, var(--color-accent) 25%, #fff);
+  color: var(--color-text);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 28px -18px rgb(0 0 0 / 20%);
+  padding: 16px 20px;
+}
+
+.muted {
+  color: var(--color-muted);
+}
+
+.stat {
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--color-primary);
+}
+
+.stat-save {
+  color: var(--color-save);
+}
+
+.slidev-layout code {
+  font-variant-numeric: normal;
+}
+
+/* Cover and section slides: a barely-there warm tint of the brand colour,
+ * so they read as breaks without leaving the light palette. The heading
+ * carries the colour instead of the background. */
+.slidev-layout.cover,
+.slidev-layout.section {
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg));
+  color: var(--color-text);
+}
+
+.slidev-layout.cover h1,
+.slidev-layout.section h1 {
+  color: var(--color-primary);
+}
+
+/* Primary on this tint is ~4.4:1 — fine for display sizes (3:1), but the
+ * subtitle stays in text colour so the hierarchy does not rely on hue alone. */
+.slidev-layout.cover h2,
+.slidev-layout.section h2 {
+  color: var(--color-text);
+}
+
+.slidev-layout.cover .muted,
+.slidev-layout.section .muted {
+  color: var(--color-muted);
+}
