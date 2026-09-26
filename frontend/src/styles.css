@@ -1,41 +1,75 @@
 /*
- * One stylesheet, plain CSS with custom properties. Light palette on :root,
- * dark overrides in one media block, so every colour has a definition in both.
+ * CheapRecipe — implements cheaprecipe-design-tokens.md.
+ *
+ * Colours are referenced by semantic role only (primary / deal / save / …),
+ * never by hue, so the premium tier is a single attribute swap:
+ *
+ *     <html data-tier="premium">
+ *
+ * Only colour tokens change between tiers; type, spacing, radius and shadow
+ * are shared. Three tokens below are derived rather than specified — they are
+ * marked, and each is built from a role colour so both tiers stay consistent.
  */
 
 :root {
-  --bg: #f7f5f1;
-  --surface: #ffffff;
-  --surface-2: #f1eee8;
-  --border: #e2ddd3;
-  --text: #1e1c19;
-  --text-muted: #6d675e;
-  --accent: #1f6f4a;
-  --accent-soft: #e6f0e9;
-  --good: #1f6f4a;
-  --warn: #9a5b12;
-  --warn-soft: #fbf0e0;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgb(30 28 25 / 6%), 0 4px 12px rgb(30 28 25 / 4%);
+  /* --- type ------------------------------------------------------------- */
+  --font-heading: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-body: Inter, system-ui, sans-serif;
 
-  color-scheme: light dark;
+  /* --- shape ------------------------------------------------------------ */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 28px -18px rgb(0 0 0 / 20%);
+  --shadow-raised: 0 2px 4px rgb(0 0 0 / 6%), 0 18px 40px -22px rgb(0 0 0 / 28%);
+
+  /* --- colour: Standard (Grocery Market) -------------------------------- */
+  --color-primary: #d8382a;
+  --color-primary-contrast: #fff;
+  --color-deal: #d8382a;
+  --color-save: #5c7a3a;
+  --color-save-soft: #eef2e6;
+  --color-accent: #ef9f1a;
+  --color-bg: #fff;
+  --color-surface: #fff;
+  --color-text: #241f1c;
+  --color-muted: #7a736c;
+  --color-border: #e9e6df;
+
+  /* --- derived (not in the token doc) ------------------------------------
+   * neutral-fill  a quiet surface for nav hover, step numbers and track
+   *               bars. Built from `border` so it exists in both tiers, and
+   *               because the doc separates cards from the page with border
+   *               rather than fill.
+   * primary-soft  tint behind active navigation and links-on-hover.
+   * focus-ring    the ring the accessibility notes ask for.
+   */
+  --neutral-fill: color-mix(in srgb, var(--color-border) 55%, var(--color-surface));
+  --primary-soft: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  --focus-ring: color-mix(in srgb, var(--color-primary) 45%, #fff);
+
+  /* The doc defines no dark palette, and inventing one would invalidate its
+   * contrast table. Declared light-only rather than left to the browser. */
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17161a;
-    --surface: #201f24;
-    --surface-2: #2a282f;
-    --border: #37343c;
-    --text: #f0eeea;
-    --text-muted: #a29b91;
-    --accent: #6dc79a;
-    --accent-soft: #23342b;
-    --good: #6dc79a;
-    --warn: #e0a765;
-    --warn-soft: #322a21;
-    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 14px rgb(0 0 0 / 25%);
-  }
+/* Premium (Berry Deli) — colours only. */
+[data-tier='premium'] {
+  --color-primary: #9e2b4e;
+  --color-primary-contrast: #fff;
+  --color-deal: #9e2b4e;
+  --color-save: #3e6b4f;
+  --color-save-soft: #e7efe9;
+  --color-accent: #c6852f;
+  --color-bg: #f7ede9;
+  --color-surface: #fff;
+  --color-text: #2e1f26;
+  /* Doc note: premium `muted` on blush is 4.4:1, marginal for small text.
+   * Darkened to the suggested value so captions clear 4.5:1. */
+  --color-muted: #6f5e64;
+  --color-border: #ebd9d3;
 }
 
 * {
@@ -44,29 +78,40 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Headings are Bricolage; everything else Inter. Tracking tightens as size
+ * grows, per the type scale. */
 h1,
 h2,
 h3 {
   margin: 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-family: var(--font-heading);
+  font-weight: 700;
 }
 
 h1 {
-  font-size: 1.6rem;
+  font-size: 2rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 h2 {
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.375rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 
 p {
@@ -86,6 +131,13 @@ dl {
   list-style: none;
 }
 
+/* The accessibility notes ask for a visible ring on everything interactive. */
+:where(a, button, input, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 /* --- shell ---------------------------------------------------------------- */
 
 .app-shell {
@@ -98,9 +150,9 @@ dl {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 14px 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -110,23 +162,25 @@ dl {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-weight: 650;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-family: var(--font-heading);
+  font-weight: 800;
 }
 
 .brand-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.95rem;
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .app-nav {
@@ -136,20 +190,115 @@ dl {
 }
 
 .app-nav a {
-  padding: 7px 12px;
-  border-radius: 8px;
-  color: var(--text-muted);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
   font-weight: 500;
 }
 
 .app-nav a:hover {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--neutral-fill);
+  color: var(--color-text);
 }
 
 .app-nav a.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.user-menu {
+  position: relative;
+}
+
+.avatar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+}
+
+.avatar-button:hover .avatar,
+.avatar-button[aria-expanded='true'] .avatar {
+  border-color: var(--color-primary);
+}
+
+/* On the profile page the avatar stands in for the missing nav tab. */
+.avatar-button.current .avatar {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+
+.avatar-caret {
+  font-size: 0.75rem;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  min-width: 220px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.875rem;
+}
+
+.menu-email {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-item {
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--neutral-fill);
+  outline: none;
 }
 
 .app-main {
@@ -157,7 +306,7 @@ dl {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 28px 24px 64px;
+  padding: 32px 24px 64px;
 }
 
 /* --- primitives ----------------------------------------------------------- */
@@ -165,7 +314,7 @@ dl {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .page-head {
@@ -179,63 +328,65 @@ dl {
 .page-head > div {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+
+/* Body copy stays inside a comfortable measure. */
+.page-head p,
+.recipe-card-summary,
+.login-tagline {
+  max-width: 72ch;
 }
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 18px 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .muted {
-  color: var(--text-muted);
+  color: var(--color-muted);
 }
 
 .meta {
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 
-.good {
-  color: var(--good);
-}
-
-.struck {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-
+/* No warn role in the token set. Accent is used as a fill with dark text on
+ * top, which is the only way the doc permits it. */
 .notice {
-  background: var(--warn-soft);
-  color: var(--warn);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-surface));
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 0.875rem;
 }
 
 .button-primary,
 .button-quiet {
   font: inherit;
-  font-weight: 550;
-  border-radius: 9px;
-  padding: 9px 16px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
   cursor: pointer;
   border: 1px solid transparent;
 }
 
 .button-primary {
-  background: var(--accent);
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
 }
 
 .button-primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--color-primary) 88%, #000);
 }
 
 .button-primary:disabled {
@@ -245,59 +396,67 @@ dl {
 
 .button-quiet {
   background: transparent;
-  border-color: var(--border);
-  color: var(--text-muted);
+  border-color: var(--color-border);
+  color: var(--color-muted);
 }
 
 .button-quiet:hover {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--neutral-fill);
+  color: var(--color-text);
 }
 
+/* Sentence case throughout — the doc rules out ALL-CAPS labels. */
 .badge {
-  font-size: 0.72rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--neutral-fill);
+  color: var(--color-muted);
 }
 
 .badge-vegan,
-.badge-vegetarian {
-  background: var(--accent-soft);
-  color: var(--accent);
+.badge-vegetarian,
+.badge-pescetarian {
+  background: var(--color-save-soft);
+  color: var(--color-save);
+  font-weight: 600;
 }
 
 .chip-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .chip {
-  font-size: 0.78rem;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-save-soft);
+  color: var(--color-text);
 }
 
 .price {
-  font-size: 1.15rem;
-  font-weight: 650;
+  font-family: var(--font-heading);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 
 .price-large {
-  font-size: 1.7rem;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
 }
 
 .price-unit {
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+  font-weight: 400;
 }
 
 .price-block {
@@ -306,46 +465,37 @@ dl {
   align-items: flex-end;
 }
 
-.saving {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--good);
-  background: var(--accent-soft);
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-}
-
 .stat-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
 }
 
 .stat {
-  flex: 1 1 150px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
+  flex: 1 1 180px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .stat-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
 }
 
 .stat-value {
-  font-size: 1.3rem;
-  font-weight: 650;
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-}
-
-.stat-value-good {
-  color: var(--good);
 }
 
 .figure-list {
@@ -359,7 +509,7 @@ dl {
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .figure-list > div:last-child {
@@ -368,12 +518,13 @@ dl {
 }
 
 .figure-list dt {
-  color: var(--text-muted);
+  color: var(--color-muted);
+  font-size: 0.875rem;
 }
 
 .figure-list dd {
   margin: 0;
-  font-weight: 550;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -388,24 +539,28 @@ dl {
 
 .login-panel {
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .brand-large .brand-mark {
-  width: 34px;
-  height: 34px;
-  font-size: 1.1rem;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  font-size: 1.25rem;
 }
 
 .brand-large .brand-name {
-  font-size: 1.2rem;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
 }
 
 .login-tagline {
-  color: var(--text-muted);
+  color: var(--color-muted);
+  font-size: 1.125rem;
+  line-height: 1.55;
   margin-bottom: 12px;
 }
 
@@ -414,73 +569,238 @@ dl {
 }
 
 .login-form h1 {
-  font-size: 1.3rem;
+  font-size: 1.5rem;
 }
 
 .login-form label {
-  font-size: 0.85rem;
-  font-weight: 550;
-  color: var(--text-muted);
-  margin-top: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  margin-top: 12px;
 }
 
 .login-form input {
   font: inherit;
   padding: 10px 12px;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-}
-
-.login-form input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .login-form .button-primary {
-  margin-top: 14px;
+  margin-top: 20px;
 }
 
 .form-error {
-  color: var(--warn);
-  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 /* --- recipes -------------------------------------------------------------- */
 
 .recipe-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
 }
 
 .recipe-card {
-  gap: 10px;
+  gap: 12px;
 }
 
 .recipe-card-head {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* Badges and meta wrap among themselves; the heart keeps its corner. */
+.recipe-card-tags {
+  display: flex;
   align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 6px 8px;
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+}
+
+/* Kept on one line; it wraps below the badges when they fill the row. */
+.recipe-card-meta {
+  white-space: nowrap;
 }
 
 .recipe-card-title {
-  font-size: 1.15rem;
-  font-weight: 650;
-  text-transform: none;
+  font-family: var(--font-heading);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.15;
   letter-spacing: -0.01em;
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .recipe-card-title a:hover {
-  color: var(--accent);
+  color: var(--color-primary);
 }
 
 .recipe-card-summary {
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.ask-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.ask-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ask-button:disabled {
+  cursor: not-allowed;
+}
+
+.ask-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-primary-contrast) 22%, transparent);
+}
+
+.badge-new {
+  background: color-mix(in srgb, var(--color-accent) 25%, var(--color-surface));
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.request-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-raised);
+}
+
+.request-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+
+.request-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.request-head h2 {
+  font-size: 1.25rem;
+}
+
+.request-close {
+  width: 32px;
+  height: 32px;
+  font-size: 1.25rem;
+}
+
+.request-form .choice-group {
+  margin-top: 4px;
+}
+
+.request-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.request-field label {
+  font-weight: 600;
+}
+
+.request-field input,
+.request-field textarea {
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.request-field input {
+  width: 6rem;
+}
+
+.request-field textarea {
+  resize: vertical;
+}
+
+.request-actions {
+  margin-top: 4px;
+}
+
+.recipe-card.planned {
+  border-color: var(--color-save);
+}
+
+.heart-button {
+  flex-shrink: 0;
+  margin-top: -2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.heart-button:hover,
+.heart-button:focus-visible {
+  background: var(--neutral-fill);
+  color: var(--color-primary);
+}
+
+.heart-button.active {
+  color: var(--color-primary);
+}
+
+.heart-button:disabled,
+.plan-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.plan-button {
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.plan-button[aria-pressed='true'] {
+  color: var(--color-save);
+  border-color: var(--color-save);
 }
 
 .recipe-card-foot {
@@ -489,30 +809,31 @@ dl {
   justify-content: space-between;
   gap: 12px;
   margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
 }
 
 .back-link {
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .back-link:hover {
-  color: var(--text);
+  color: var(--color-primary);
 }
 
 .detail-columns {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
-  gap: 16px;
+  gap: 20px;
   align-items: start;
 }
 
 .detail-side {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .ingredient-list {
@@ -523,7 +844,7 @@ dl {
 
 .ingredient {
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .ingredient:last-child {
@@ -538,54 +859,58 @@ dl {
 }
 
 .ingredient-name {
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .ingredient-amount {
-  color: var(--text-muted);
+  color: var(--color-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .ingredient-offer {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  margin-top: 3px;
-  font-size: 0.82rem;
+  margin-top: 4px;
+  font-size: 0.75rem;
 }
 
 .offer-title {
-  color: var(--text-muted);
+  color: var(--color-muted);
 }
 
 .offer-price {
-  color: var(--good);
-  font-weight: 550;
+  color: var(--color-save);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
+/* "Only from Thursday" — a caution, so accent as a fill with dark text. */
 .offer-late {
-  color: var(--warn);
-  background: var(--warn-soft);
-  padding: 1px 7px;
-  border-radius: 999px;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-accent) 25%, var(--color-surface));
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
 }
 
 .ingredient-pantry {
-  font-size: 0.82rem;
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  color: var(--color-muted);
   font-style: italic;
 }
 
 .step-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   counter-reset: step;
 }
 
 .step-list li {
   display: grid;
-  grid-template-columns: 26px 1fr;
+  grid-template-columns: 28px 1fr;
   gap: 12px;
   counter-increment: step;
 }
@@ -594,33 +919,36 @@ dl {
   content: counter(step);
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 650;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--color-primary);
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .allergens {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.875rem;
+  color: var(--color-muted);
 }
 
+/* Why the planner chose this recipe — a positive signal, so `save`. */
 .rationale {
-  background: var(--accent-soft);
+  background: var(--color-save-soft);
   border-color: transparent;
+  box-shadow: none;
 }
 
 /* --- shopping list -------------------------------------------------------- */
 
 .list-group {
-  gap: 10px;
+  gap: 12px;
 }
 
 .list-group-title {
-  font-size: 0.8rem;
+  font-size: 1.125rem;
 }
 
 .shopping-list {
@@ -629,7 +957,7 @@ dl {
 }
 
 .shopping-item {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .shopping-item:last-child {
@@ -641,32 +969,38 @@ dl {
   grid-template-columns: auto 1fr auto;
   align-items: start;
   gap: 12px;
-  padding: 11px 0;
+  padding: 12px 0;
   cursor: pointer;
 }
 
 .shopping-item input {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   margin: 2px 0 0;
-  accent-color: var(--accent);
+  accent-color: var(--color-primary);
 }
 
 .shopping-item-body {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .shopping-item-title {
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .shopping-item-meta,
 .shopping-item-used {
-  font-size: 0.8rem;
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.shopping-item-late {
+  align-self: flex-start;
+  margin: 2px 0;
+  font-size: 0.75rem;
 }
 
 .shopping-item-price {
@@ -684,21 +1018,163 @@ dl {
 
 /* --- profile -------------------------------------------------------------- */
 
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-preferences .figure-list dd {
+  text-align: right;
+}
+
+.profile-status:empty {
+  display: none;
+}
+
+.profile-preferences h3 {
+  font-size: 1rem;
+  margin: 24px 0 0;
+}
+
+.choice-group {
+  border: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-group legend {
+  font-weight: 600;
+  padding: 0;
+}
+
+.choice-group .meta {
+  margin: 0;
+}
+
+.choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Pill-shaped radio/checkbox; the native input stays for keyboard and AT. */
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.choice input {
+  margin: 0;
+  accent-color: var(--color-save);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--color-save);
+  background: var(--color-save-soft);
+  font-weight: 600;
+}
+
+.choice:has(input:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.list-editor label {
+  font-weight: 600;
+}
+
+.list-editor .meta {
+  margin: 0;
+}
+
+.chip-removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.chip-remove {
+  font: inherit;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.chip-remove:hover,
+.chip-remove:focus-visible {
+  background: var(--neutral-fill);
+  color: var(--color-text);
+}
+
+.list-editor-add {
+  display: flex;
+  gap: 8px;
+}
+
+.list-editor-add input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.list-editor-add .button-quiet:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
 .budget-bar {
   height: 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  background: var(--neutral-fill);
   overflow: hidden;
 }
 
 .budget-bar span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--color-save);
 }
 
 .budget-caption {
-  font-size: 0.82rem;
+  font-size: 0.875rem;
+  color: var(--color-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -712,11 +1188,28 @@ dl {
   .app-header {
     flex-wrap: wrap;
     gap: 12px;
+    padding: 12px 16px;
   }
 
   .app-nav {
     order: 3;
     width: 100%;
     overflow-x: auto;
+  }
+
+  .user-menu {
+    margin-left: auto;
+  }
+
+  .app-main {
+    padding: 24px 16px 48px;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
   }
 }

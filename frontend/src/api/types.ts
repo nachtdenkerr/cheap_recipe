@@ -9,7 +9,9 @@
  * Money is in euro cents to keep arithmetic exact — format with formatPrice().
  */
 
-export type DietType = 'vegan' | 'vegetarian' | 'normal'
+import type { Allergen, DietType } from './vocabulary'
+
+export type { Allergen, DietType }
 
 export interface Offer {
   /** Original German product name, as printed in the shop. */
@@ -47,8 +49,6 @@ export interface RecipeCost {
   /** Cost of the ingredients actually used by this recipe. */
   totalCents: number
   perServingCents: number
-  /** What the same basket would cost at non-discounted prices. */
-  regularTotalCents: number
   /** Value of the part of each pack the recipe does not use. */
   leftoverCents: number
 }
@@ -68,6 +68,10 @@ export interface Recipe {
   nutrition: Nutrition
   /** Why the planner chose this — surfaced so the ranking stays explainable. */
   rationale: string
+  /** Hearted by the user; saved on their preferences. */
+  isFavourite: boolean
+  /** Chosen for this week — only these recipes fill the shopping list. */
+  inMealPlan: boolean
 }
 
 export interface ShoppingListItem {
@@ -79,13 +83,68 @@ export interface ShoppingListItem {
   checked: boolean
 }
 
+/** The account plus its preferences — mirrors user_preference in the database. */
 export interface User {
   name: string
   email: string
   dietType: DietType
   householdSize: number
-  weeklyBudgetCents: number
+  /** Null when no budget is set. */
+  weeklyBudgetCents: number | null
   /** Allergens to exclude — fed to the allergen filter, never to the LLM. */
-  allergens: string[]
-  market: string
+  allergens: Allergen[]
+  /** Chain name of the home supermarket, e.g. "EDEKA". */
+  market: string | null
+  cuisines: string[]
+  /** Ingredients to favour when planning. */
+  whiteList: string[]
+  /** Ingredients not allergic to, but not wanted either. */
+  blackList: string[]
+  age: number | null
+  gender: string | null
+}
+
+/** Body of POST /auth/me/preferences — only the fields sent are changed. */
+export type PreferencesUpdate = Partial<
+  Pick<
+    User,
+    | 'name'
+    | 'dietType'
+    | 'householdSize'
+    | 'weeklyBudgetCents'
+    | 'allergens'
+    | 'market'
+    | 'cuisines'
+    | 'whiteList'
+    | 'blackList'
+    | 'age'
+    | 'gender'
+  >
+>
+
+/** Body of POST /generate/refine. Each request uses one of the week's quota. */
+export interface RefineRequest {
+  /** "replace": swap the unplanned recipes; "pantry": favour fridge items. */
+  mode: 'replace' | 'pantry'
+  /** How many new recipes; the server defaults to the number of unplanned ones. */
+  count?: number
+  pantryItems?: string[]
+  /** Free text for the AI planner, e.g. "nothing spicy". */
+  note?: string
+}
+
+/** GET /generate/quota */
+export interface RefineQuota {
+  used: number
+  limit: number
+  remaining: number
+  /** ISO timestamp — next Monday 00:00, German time. */
+  resetsAt: string
+  /** False until this week's first plan exists. */
+  weeklyPlanDone: boolean
+}
+
+export interface RefineResponse {
+  recipes: Recipe[]
+  quota: RefineQuota
 }

@@ -37,8 +37,6 @@ export function RecipeDetail() {
     )
   }
 
-  const saving = recipe.cost.regularTotalCents - recipe.cost.totalCents
-
   return (
     <div className="page recipe-detail">
       <Link to="/" className="back-link">
@@ -98,14 +96,6 @@ export function RecipeDetail() {
               <div>
                 <dt>{t.recipe.recipeTotal}</dt>
                 <dd>{formatPrice(recipe.cost.totalCents)}</dd>
-              </div>
-              <div>
-                <dt>{t.recipe.regularPrice}</dt>
-                <dd className="struck">{formatPrice(recipe.cost.regularTotalCents)}</dd>
-              </div>
-              <div>
-                <dt>{t.home.totalSaving}</dt>
-                <dd className="good">{formatPrice(saving)}</dd>
               </div>
               <div>
                 <dt>{t.recipe.leftoverValue}</dt>

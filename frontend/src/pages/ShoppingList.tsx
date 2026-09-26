@@ -108,9 +108,12 @@ export function ShoppingList() {
                       <span className="shopping-item-meta">
                         {item.offer.ingredientEn}
                         {item.quantity > 1 && ` · ×${item.quantity}`}
-                        {item.offer.validFrom > WEEK_START &&
-                          ` · ${t.recipe.availableFrom(formatWeekday(item.offer.validFrom))}`}
                       </span>
+                      {item.offer.validFrom > WEEK_START && (
+                        <span className="offer-late shopping-item-late">
+                          {t.recipe.availableFrom(formatWeekday(item.offer.validFrom))}
+                        </span>
+                      )}
                       <span className="shopping-item-used">
                         {t.shopping.usedBy}: {item.usedBy.join(', ')}
                       </span>
