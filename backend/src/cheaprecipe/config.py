@@ -31,3 +31,9 @@ def openrouter_api_key() -> str | None:
 def spoonacular_api_key() -> str | None:
     load_keys()
     return os.environ.get("SPOONACULAR_API_KEY")
+
+
+def secret_key() -> str | None:
+    """Signs the API's session tokens. Unset means tokens die with the process."""
+    load_keys()
+    return os.environ.get("SECRET_KEY")

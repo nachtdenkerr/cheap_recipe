@@ -7,7 +7,7 @@
  * costings and nutrition are hand-written; `calculation/` will produce them.
  */
 
-import type { Offer, Recipe, ShoppingListItem, User } from './types'
+import type { Offer, Recipe, User } from './types'
 
 const WEEK = { validFrom: '2025-11-17', validTill: '2025-11-22' }
 /** Some offers only start later in the week. */
@@ -197,12 +197,13 @@ export const recipes: Recipe[] = [
     cost: {
       totalCents: 526,
       perServingCents: 263,
-      regularTotalCents: 700,
       leftoverCents: 362,
     },
     nutrition: { kcal: 610, proteinG: 18, carbsG: 78, fatG: 24 },
     rationale:
       'Hokkaido at €1.11 is the cheapest vegetable on offer this week, and it needs neither peeling nor a second cooking step.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
     id: 'chicken-savoy-traybake',
@@ -230,12 +231,13 @@ export const recipes: Recipe[] = [
     cost: {
       totalCents: 750,
       perServingCents: 188,
-      regularTotalCents: 1010,
       leftoverCents: 138,
     },
     nutrition: { kcal: 520, proteinG: 41, carbsG: 18, fatG: 31 },
     rationale:
       'Four portions under €2 each. The soup greens are a €1.11 bundle that would otherwise be bought as three separate vegetables.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
     id: 'spinach-tomato-pasta',
@@ -262,12 +264,13 @@ export const recipes: Recipe[] = [
     cost: {
       totalCents: 477,
       perServingCents: 159,
-      regularTotalCents: 620,
       leftoverCents: 0,
     },
     nutrition: { kcal: 480, proteinG: 17, carbsG: 84, fatG: 8 },
     rationale:
       'Uses every pack completely — no leftovers to waste — and all three items are on offer for the full week.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
     id: 'perch-lambs-lettuce',
@@ -296,12 +299,13 @@ export const recipes: Recipe[] = [
     cost: {
       totalCents: 620,
       perServingCents: 310,
-      regularTotalCents: 830,
       leftoverCents: 435,
     },
     nutrition: { kcal: 540, proteinG: 38, carbsG: 42, fatG: 22 },
     rationale:
       'The perch is €1.99 for two fillets. Note the lamb’s lettuce and potatoes are Saturday-and-Thursday offers — shop late in the week for this one.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
     id: 'blueberry-skyr-bowl',
@@ -328,106 +332,122 @@ export const recipes: Recipe[] = [
     cost: {
       totalCents: 399,
       perServingCents: 200,
-      regularTotalCents: 540,
       leftoverCents: 477,
     },
     nutrition: { kcal: 340, proteinG: 21, carbsG: 48, fatG: 6 },
     rationale:
       'Skyr at €0.99 carries 21 g of protein per serving — the cheapest protein per euro in this week’s offers.',
+    isFavourite: false,
+    inMealPlan: false,
   },
 ]
 
 /**
- * Offer-level view of everything the five recipes need.
- *
- * One line per offer, not per recipe ingredient: `usedBy` is what stops the
- * butter appearing twice.
+ * Recipes the mock hands out when the user asks for new ones. Built on the
+ * same week's offers, so the shopping list still makes sense.
  */
-export const shoppingList: ShoppingListItem[] = [
-  { offer: offers.pumpkin, quantity: 1, usedBy: ['Roast Hokkaido & Sage Gnocchi'], checked: false },
-  { offer: offers.gnocchi, quantity: 1, usedBy: ['Roast Hokkaido & Sage Gnocchi'], checked: false },
+export const extraRecipes: Recipe[] = [
   {
-    offer: offers.butter,
-    quantity: 1,
-    usedBy: ['Roast Hokkaido & Sage Gnocchi', 'Pan-Fried Perch, Potatoes & Lamb’s Lettuce'],
-    checked: false,
+    id: 'hokkaido-soup',
+    title: 'Velvet Hokkaido Soup',
+    summary: 'Pumpkin and soup greens blended smooth, finished with a spoon of skyr.',
+    servings: 4,
+    minutes: 40,
+    dietType: 'vegetarian',
+    allergens: ['milk', 'celery'],
+    ingredients: [
+      { name: 'hokkaido pumpkin', amount: '1 kg', offer: offers.pumpkin },
+      { name: 'soup vegetables', amount: '1 bunch', offer: offers.soupVegetables },
+      { name: 'skyr yogurt', amount: '150 g', offer: offers.skyr },
+      { name: 'vegetable stock, salt, nutmeg', amount: 'to taste', pantry: true },
+    ],
+    steps: [
+      'Chop the pumpkin and soup greens roughly — the pumpkin skin can stay on.',
+      'Cover with stock and simmer 25 minutes until everything is soft.',
+      'Blend smooth and season with salt and nutmeg.',
+      'Serve with a spoon of skyr swirled through each bowl.',
+    ],
+    cost: { totalCents: 255, perServingCents: 64, leftoverCents: 66 },
+    nutrition: { kcal: 190, proteinG: 8, carbsG: 30, fatG: 3 },
+    rationale: 'Four bowls for under €3, and it uses the whole pumpkin.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
-    offer: offers.granaPadano,
-    quantity: 1,
-    usedBy: ['Roast Hokkaido & Sage Gnocchi'],
-    checked: false,
+    id: 'potato-spinach-hash',
+    title: 'Potato & Spinach Hash with Fried Eggs',
+    summary: 'Crisp potato cubes and garlicky spinach, topped with a runny egg.',
+    servings: 2,
+    minutes: 30,
+    dietType: 'vegetarian',
+    allergens: ['eggs'],
+    ingredients: [
+      { name: 'raclette potatoes', amount: '500 g', offer: offers.potatoes },
+      { name: 'spinach', amount: '225 g, frozen', offer: offers.spinach },
+      { name: 'eggs', amount: '2', pantry: true },
+      { name: 'garlic, oil, salt', amount: 'to taste', pantry: true },
+    ],
+    steps: [
+      'Dice the potatoes and fry in oil over medium heat for 15 minutes, turning now and then.',
+      'Add the garlic and frozen spinach and cook until the spinach has thawed and the pan is dry.',
+      'Make two hollows, crack in the eggs, cover and cook 3–4 minutes.',
+    ],
+    cost: { totalCents: 297, perServingCents: 149, leftoverCents: 131 },
+    nutrition: { kcal: 420, proteinG: 18, carbsG: 46, fatG: 17 },
+    rationale: 'A fridge-friendly dinner: eggs and potatoes carry it.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
-    offer: offers.chickenThighs,
-    quantity: 1,
-    usedBy: ['One-Tray Chicken with Savoy & Root Veg'],
-    checked: false,
+    id: 'savoy-carrot-noodles',
+    title: 'Savoy & Carrot Noodle Stir-Fry',
+    summary: 'Pasta tossed with shredded savoy and carrot ribbons in a soy-garlic glaze.',
+    servings: 3,
+    minutes: 20,
+    dietType: 'vegan',
+    allergens: ['gluten', 'soy'],
+    ingredients: [
+      { name: 'pasta', amount: '300 g', offer: offers.pasta },
+      { name: 'savoy cabbage', amount: '½ head', offer: offers.savoyCabbage },
+      { name: 'carrots', amount: '250 g', offer: offers.carrots },
+      { name: 'soy sauce, garlic, oil', amount: 'to taste', pantry: true },
+    ],
+    steps: [
+      'Cook the pasta; meanwhile shred the savoy and peel the carrots into ribbons.',
+      'Stir-fry the vegetables in a very hot pan for 4 minutes.',
+      'Add garlic and soy sauce, then toss the drained pasta through.',
+    ],
+    cost: { totalCents: 263, perServingCents: 88, leftoverCents: 164 },
+    nutrition: { kcal: 430, proteinG: 14, carbsG: 82, fatG: 6 },
+    rationale: 'Uses the other half of the savoy from the traybake.',
+    isFavourite: false,
+    inMealPlan: false,
   },
   {
-    offer: offers.soupVegetables,
-    quantity: 1,
-    usedBy: ['One-Tray Chicken with Savoy & Root Veg'],
-    checked: false,
+    id: 'perch-tomato-bake',
+    title: 'Perch & Tomato Traybake',
+    summary: 'Fillets roasted on vine tomatoes and potatoes, all on one tray.',
+    servings: 2,
+    minutes: 35,
+    dietType: 'pescetarian',
+    allergens: ['fish'],
+    ingredients: [
+      { name: 'Nile perch fillets', amount: '2 fillets', offer: offers.nilePerch },
+      { name: 'vine tomatoes', amount: '400 g', offer: offers.tomatoes },
+      { name: 'raclette potatoes', amount: '400 g', offer: offers.potatoes },
+      { name: 'olive oil, lemon, salt', amount: 'to taste', pantry: true },
+    ],
+    steps: [
+      'Slice the potatoes thinly and roast at 220 °C for 15 minutes.',
+      'Add the tomatoes and the seasoned fillets on top.',
+      'Roast 12 more minutes and finish with lemon.',
+    ],
+    cost: { totalCents: 514, perServingCents: 257, leftoverCents: 83 },
+    nutrition: { kcal: 460, proteinG: 36, carbsG: 40, fatG: 15 },
+    rationale: 'Fish twice a week for under €2.60 a plate.',
+    isFavourite: false,
+    inMealPlan: false,
   },
-  {
-    offer: offers.savoyCabbage,
-    quantity: 1,
-    usedBy: ['One-Tray Chicken with Savoy & Root Veg'],
-    checked: false,
-  },
-  {
-    offer: offers.carrots,
-    quantity: 1,
-    usedBy: ['One-Tray Chicken with Savoy & Root Veg'],
-    checked: false,
-  },
-  { offer: offers.pasta, quantity: 1, usedBy: ['Garlicky Spinach & Tomato Pasta'], checked: false },
-  {
-    offer: offers.spinach,
-    quantity: 1,
-    usedBy: ['Garlicky Spinach & Tomato Pasta'],
-    checked: false,
-  },
-  {
-    offer: offers.tomatoes,
-    quantity: 1,
-    usedBy: ['Garlicky Spinach & Tomato Pasta'],
-    checked: false,
-  },
-  {
-    offer: offers.nilePerch,
-    quantity: 1,
-    usedBy: ['Pan-Fried Perch, Potatoes & Lamb’s Lettuce'],
-    checked: false,
-  },
-  {
-    offer: offers.potatoes,
-    quantity: 1,
-    usedBy: ['Pan-Fried Perch, Potatoes & Lamb’s Lettuce'],
-    checked: false,
-  },
-  {
-    offer: offers.lambsLettuce,
-    quantity: 1,
-    usedBy: ['Pan-Fried Perch, Potatoes & Lamb’s Lettuce'],
-    checked: false,
-  },
-  {
-    offer: offers.vinegar,
-    quantity: 1,
-    usedBy: ['Pan-Fried Perch, Potatoes & Lamb’s Lettuce'],
-    checked: false,
-  },
-  { offer: offers.skyr, quantity: 1, usedBy: ['Blueberry Skyr Breakfast Bowl'], checked: false },
-  {
-    offer: offers.blueberries,
-    quantity: 1,
-    usedBy: ['Blueberry Skyr Breakfast Bowl'],
-    checked: false,
-  },
-  { offer: offers.muesli, quantity: 1, usedBy: ['Blueberry Skyr Breakfast Bowl'], checked: false },
-  { offer: offers.apples, quantity: 1, usedBy: ['Blueberry Skyr Breakfast Bowl'], checked: false },
 ]
 
 export const user: User = {
@@ -437,5 +457,10 @@ export const user: User = {
   householdSize: 2,
   weeklyBudgetCents: 4000,
   allergens: ['nuts'],
-  market: 'EDEKA Frank, Erlachstraße 45',
+  market: 'EDEKA',
+  cuisines: ['Italian', 'German'],
+  whiteList: ['pumpkin', 'spinach'],
+  blackList: ['coriander'],
+  age: null,
+  gender: null,
 }

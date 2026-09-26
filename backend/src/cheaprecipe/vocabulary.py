@@ -88,6 +88,34 @@ DietType = Literal[
 ]
 DIET_TYPES: tuple[str, ...] = get_args(DietType)
 
+# --- what a user can pick in the app ----------------------------------------
+#
+# The MVP offers the common cases only. Each diet is also a Spoonacular `diet`
+# value, so a choice still passes straight through to retrieval.
+
+CommonDiet = Literal["normal", "vegetarian", "vegan", "pescetarian"]
+COMMON_DIETS: tuple[str, ...] = get_args(CommonDiet)
+
+# The 14 allergens EU law requires food labels to declare (Regulation
+# 1169/2011, Annex II). "nuts" means tree nuts; peanuts are their own entry.
+Allergen = Literal[
+    "gluten",
+    "crustaceans",
+    "eggs",
+    "fish",
+    "peanuts",
+    "soy",
+    "milk",
+    "nuts",
+    "celery",
+    "mustard",
+    "sesame",
+    "sulphites",
+    "lupin",
+    "molluscs",
+]
+ALLERGENS: tuple[str, ...] = get_args(Allergen)
+
 # --- Spoonacular's `cuisine` values -----------------------------------------
 
 Cuisine = Literal[

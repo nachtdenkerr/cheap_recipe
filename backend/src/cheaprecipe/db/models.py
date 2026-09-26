@@ -51,25 +51,91 @@ generation_recipe = Table(
     Column(
         "generation_id", ForeignKey("generation.id", ondelete="CASCADE"), primary_key=True
     ),
-    Column("recipe_id", ForeignKey("recipe.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "recipe_id", ForeignKey("recipe_cache.id", ondelete="CASCADE"), primary_key=True
+    ),
+)
+
+# Recipes a user hearted. Keyed on the preference row: a favourite is a taste
+# signal, like the white list, not part of the account.
+favourite_recipe = Table(
+    "favourite_recipe",
+    Base.metadata,
+    Column(
+        "user_id", ForeignKey("user_preference.user_id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "recipe_id", ForeignKey("recipe_cache.id", ondelete="CASCADE"), primary_key=True
+    ),
+)
+
+# The subset of a generation's suggestions the user chose to cook. Only these
+# put ingredients on the shopping list.
+meal_plan_recipe = Table(
+    "meal_plan_recipe",
+    Base.metadata,
+    Column(
+        "generation_id", ForeignKey("generation.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "recipe_id", ForeignKey("recipe_cache.id", ondelete="CASCADE"), primary_key=True
+    ),
 )
 
 
 # --- users and stores -------------------------------------------------------
 
 class User(Base):
+    """The account: who someone is and how they sign in.
+
+    Only authentication lives here. What they like to eat is on
+    `UserPreference`, so the login path never loads the planner's inputs and
+    the planner never sees a password hash.
+    """
+
     __tablename__ = "user_account"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(30), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
+    # A hash (argon2/bcrypt output), never the password itself — hence the length.
+    password_hash: Mapped[str] = mapped_column(String(255))
     fullname: Mapped[str | None] = mapped_column(String(120))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Null until the first sign-in.
+    last_login: Mapped[datetime | None] = mapped_column(DateTime)
+    # 45 fits the longest textual IPv6 address.
+    last_login_ip: Mapped[str | None] = mapped_column(String(45))
+
+    preference: Mapped["UserPreference | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    generations: Mapped[list["Generation"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id!r}, username={self.username!r}, email={self.email!r})"
+
+
+class UserPreference(Base):
+    """What the selection and calculation stages read about a user.
+
+    One row per user, keyed by the user's id. Age and gender sit here rather
+    than on `User` because nutrition targets are computed from them.
+    """
+
+    __tablename__ = "user_preference"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user_account.id", ondelete="CASCADE"), primary_key=True
+    )
 
     age: Mapped[int | None]
     gender: Mapped[str | None] = mapped_column(String(30))
 
-    # Preferences the selection and calculation stages read. Lists rather than
-    # comma-joined strings so nothing has to parse them back out.
+    # Lists rather than comma-joined strings so nothing has to parse them back out.
     diet_type: Mapped[str | None] = mapped_column(String(20))
     cuisines: Mapped[list | None] = mapped_column(JSON)
     allergens: Mapped[list | None] = mapped_column(JSON)
@@ -77,23 +143,26 @@ class User(Base):
     white_list: Mapped[list | None] = mapped_column(JSON)
     health_goal: Mapped[str | None] = mapped_column(String(120))
 
+    # How many people a plan feeds, and what a week of it may cost.
+    household_size: Mapped[int | None]
+    weekly_budget_cents: Mapped[int | None]
+
     fav_supermarket_id: Mapped[int | None] = mapped_column(
         ForeignKey("supermarket.id")
     )
     fav_supermarket: Mapped["Supermarket | None"] = relationship(
-        back_populates="users"
+        back_populates="user_preferences"
     )
 
-    generations: Mapped[list["Generation"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+    favourite_recipes: Mapped[list["RecipeCache"]] = relationship(
+        secondary=favourite_recipe
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    user: Mapped["User"] = relationship(back_populates="preference")
 
     def __repr__(self) -> str:
         return (
-            f"User(id={self.id!r}, username={self.username!r}, "
-            f"fullname={self.fullname!r}, "
+            f"UserPreference(user_id={self.user_id!r}, diet_type={self.diet_type!r}, "
             f"fav_supermarket_id={self.fav_supermarket_id!r})"
         )
 
@@ -119,7 +188,9 @@ class Supermarket(Base):
     addresses: Mapped[list["Address"]] = relationship(
         back_populates="supermarket", cascade="all, delete-orphan"
     )
-    users: Mapped[list["User"]] = relationship(back_populates="fav_supermarket")
+    user_preferences: Mapped[list["UserPreference"]] = relationship(
+        back_populates="fav_supermarket"
+    )
 
     def __repr__(self) -> str:
         return f"Supermarket(id={self.id!r}, name={self.name!r})"
@@ -401,7 +472,7 @@ class RecipeIngredient(Base):
     unit: Mapped[str | None] = mapped_column(String(20))
     optional: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    recipe: Mapped["RecipeCache"] = relationship(back_populates="ingredients")
+    recipe_cache: Mapped["RecipeCache"] = relationship(back_populates="ingredients")
     canonical_ingredient: Mapped["CanonicalIngredient | None"] = relationship(
         back_populates="recipe_ingredients"
     )
@@ -428,8 +499,16 @@ class Generation(Base):
         ForeignKey("user_account.id", ondelete="CASCADE")
     )
 
+    # "weekly" for the week's first plan, "refine" for a follow-up request
+    # (replace unplanned recipes / use fridge items). Refines are rate-limited.
+    kind: Mapped[str] = mapped_column(String(10), default="weekly", server_default="weekly")
+
     # The inputs, so a run can be reproduced or explained.
     diet_type: Mapped[str | None] = mapped_column(String(20))
+    # What the user said they already had, for a refine in fridge mode.
+    pantry_items: Mapped[list | None] = mapped_column(JSON)
+    # The free-text note sent with a refine; only present when the LLM ran.
+    note: Mapped[str | None] = mapped_column(String(300))
     use: Mapped[str | None] = mapped_column(String(20))
     model: Mapped[str | None] = mapped_column(String(80))
 
@@ -444,8 +523,13 @@ class Generation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User | None"] = relationship(back_populates="generations")
+    # Everything the planner suggested...
     recipes: Mapped[list["RecipeCache"]] = relationship(
         secondary=generation_recipe, back_populates="generations"
+    )
+    # ...and what the user added to their meal plan from it.
+    planned_recipes: Mapped[list["RecipeCache"]] = relationship(
+        secondary=meal_plan_recipe
     )
     items: Mapped[list["GenerationItem"]] = relationship(
         back_populates="generation", cascade="all, delete-orphan"
@@ -486,6 +570,9 @@ class GenerationItem(Base):
 
     amount: Mapped[float | None]
     unit: Mapped[str | None] = mapped_column(String(20))
+
+    # Ticked off on the shopping list; per line, so it survives a reload.
+    checked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     generation: Mapped["Generation"] = relationship(back_populates="items")
     offer: Mapped["Offer | None"] = relationship(back_populates="generation_items")

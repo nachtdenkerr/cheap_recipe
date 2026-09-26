@@ -1,16 +1,9 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 
-import { signOut } from '../auth/session'
 import { t } from '../i18n/strings'
+import { UserMenu } from './UserMenu'
 
 export function Layout() {
-  const navigate = useNavigate()
-
-  function handleSignOut() {
-    signOut()
-    navigate('/login', { replace: true })
-  }
-
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -26,12 +19,9 @@ export function Layout() {
             {t.nav.home}
           </NavLink>
           <NavLink to="/shopping-list">{t.nav.shoppingList}</NavLink>
-          <NavLink to="/profile">{t.nav.profile}</NavLink>
         </nav>
 
-        <button type="button" className="button-quiet" onClick={handleSignOut}>
-          {t.nav.signOut}
-        </button>
+        <UserMenu />
       </header>
 
       <main className="app-main">
