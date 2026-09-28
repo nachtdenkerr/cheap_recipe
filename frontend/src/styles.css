@@ -1213,3 +1213,94 @@ dl {
     font-size: 1.75rem;
   }
 }
+
+/* --- cooking time per day ---------------------------------------------------- */
+
+.week-time {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+}
+
+.week-time > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 12px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.week-time > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A chevron that turns when open, so it reads as a dropdown. */
+.week-time > summary::after {
+  content: '▾';
+  color: var(--color-muted);
+  transition: transform 0.15s ease;
+}
+
+.week-time[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.week-time > summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.week-time-title {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.week-time[open] {
+  padding-bottom: 12px;
+}
+
+.week-time .meta {
+  margin: 0 0 12px;
+}
+
+.week-time-days {
+  margin-bottom: 4px;
+}
+
+.week-time-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.week-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.week-time-field label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.week-time-field select {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .week-time > summary::after {
+    transition: none;
+  }
+}

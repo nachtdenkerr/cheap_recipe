@@ -2,8 +2,9 @@
 
 from datetime import date
 
-from app.schemas import CamelModel
 from cheaprecipe.vocabulary import CommonDiet, DietType
+
+from app.schemas import CamelModel
 
 
 class Offer(CamelModel):

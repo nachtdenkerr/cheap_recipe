@@ -1,12 +1,12 @@
 """Shopping list endpoints: what the latest plan buys, and what is ticked off."""
 
+from cheaprecipe.db.models import GenerationItem
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import update
 
 from app.deps import CurrentUser, SessionDep
 from app.presenters import latest_generation, shopping_list
 from app.schemas.shopping import CheckUpdate, ShoppingListItem
-from cheaprecipe.db.models import GenerationItem
 
 router = APIRouter(prefix="/shopping", tags=["shopping"])
 

@@ -142,7 +142,8 @@ class UserPreference(Base):
     black_list: Mapped[list | None] = mapped_column(JSON)
     white_list: Mapped[list | None] = mapped_column(JSON)
     health_goal: Mapped[str | None] = mapped_column(String(120))
-
+    week_time_availability: Mapped[list[int] | None] = mapped_column(JSON)
+    
     # How many people a plan feeds, and what a week of it may cost.
     household_size: Mapped[int | None]
     weekly_budget_cents: Mapped[int | None]
@@ -168,8 +169,7 @@ class UserPreference(Base):
 
 
 class UserRecipeFeedback(Base):
-    """
-    """
+    """Liked or excluded actions from user for each recipe"""
     __tablename__ = "user_recipe_feedback"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"))
@@ -227,7 +227,7 @@ class Address(Base):
 class Offer(Base):
     """One reduced-price offer, as ingestion + normalization produced it.
 
-    Mirrors the columns of new_columns.csv: everything the scraper read, plus
+    Mirrors the columns of <store>_offers_classified.csv: everything the scraper read, plus
     what the LLM steps added (`ingredient_en` and the classification flags).
     """
 

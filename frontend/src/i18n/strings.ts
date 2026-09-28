@@ -150,6 +150,25 @@ export const en = {
     basketTotal: 'Basket total',
   },
 
+  weekTime: {
+    heading: 'Cooking time per day',
+    hint: 'Recipes that take longer than your freest day are never suggested, and each week is checked against these times.',
+    unsetHint: 'Not set — the planner assumes you have time every day.',
+    perWeek: (total: string) => `${total} a week`,
+    noCooking: 'No cooking',
+    set: 'Set cooking times',
+    clear: 'Clear cooking times',
+    day: {
+      monday: 'Monday',
+      tuesday: 'Tuesday',
+      wednesday: 'Wednesday',
+      thursday: 'Thursday',
+      friday: 'Friday',
+      saturday: 'Saturday',
+      sunday: 'Sunday',
+    },
+  },
+
   diet: {
     normal: 'No restrictions',
     vegetarian: 'Vegetarian',

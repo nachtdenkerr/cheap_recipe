@@ -463,4 +463,5 @@ export const user: User = {
   blackList: ['coriander'],
   age: null,
   gender: null,
+  weekTimeAvailability: [30, 30, 45, 30, 60, 90, 60],
 }

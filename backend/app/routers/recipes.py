@@ -1,12 +1,12 @@
 """Recipe endpoints: browse the latest suggestions, heart them, plan them."""
 
+from cheaprecipe.db.models import Generation, RecipeCache, User, UserPreference
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, SessionDep
 from app.presenters import favourite_ids, latest_generation, recipe_out
 from app.schemas.recipes import Recipe
-from cheaprecipe.db.models import Generation, RecipeCache, User, UserPreference
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 

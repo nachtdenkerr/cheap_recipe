@@ -18,6 +18,8 @@ so the API makes no claim about savings.
 
 import math
 
+from cheaprecipe.db.models import Generation, Offer, RecipeCache, User
+from cheaprecipe.vocabulary import ALLERGENS, COMMON_DIETS, CUISINES
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,8 +29,6 @@ from app.schemas.recipes import Offer as OfferOut
 from app.schemas.recipes import Recipe as RecipeOut
 from app.schemas.recipes import RecipeIngredient as IngredientOut
 from app.schemas.shopping import ShoppingListItem
-from cheaprecipe.db.models import Generation, Offer, RecipeCache, User
-from cheaprecipe.vocabulary import ALLERGENS, COMMON_DIETS, CUISINES
 
 # Unit -> (dimension, factor to grams or millilitres).
 _UNITS = {
@@ -85,6 +85,7 @@ def user_out(user: User) -> UserOut:
         health_goal=pref.health_goal if pref else None,
         age=pref.age if pref else None,
         gender=pref.gender if pref else None,
+        week_time_availability=pref.week_time_availability if pref else None,
     )
 
 

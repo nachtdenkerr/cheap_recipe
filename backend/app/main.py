@@ -9,10 +9,10 @@ proxies /api/* here with the prefix stripped, so routes carry no /api.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from cheaprecipe.db.session import init_db
 from fastapi import FastAPI
 
 from app.routers import auth, generate, nutrition, recipes, shopping
-from cheaprecipe.db.session import init_db
 
 
 @asynccontextmanager

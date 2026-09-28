@@ -1,5 +1,6 @@
 """Auth endpoints: signup, login, the signed-in user and their preferences."""
 
+from cheaprecipe.db.models import Supermarket, User, UserPreference
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, or_, select
 
@@ -15,7 +16,6 @@ from app.schemas.auth import (
     User as UserOut,
 )
 from app.security import hash_password, issue_token, verify_password
-from cheaprecipe.db.models import Supermarket, User, UserPreference
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -3,15 +3,11 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from app import security
 from app.main import app
 from app.quota import STORE_TZ, week_bounds
-from cheaprecipe.agents import planner
-from cheaprecipe.agents.contracts import Plan
+from cheaprecipe.agents import critic, planner
+from cheaprecipe.agents.contracts import Critique, Plan
 from cheaprecipe.db.models import (
     Address,
     CanonicalIngredient,
@@ -24,6 +20,9 @@ from cheaprecipe.db.models import (
     User,
 )
 from cheaprecipe.db.session import get_session, init_db, make_engine
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 PASSWORD = "correct horse battery"
 
@@ -129,7 +128,7 @@ def test_signup_login_and_me(client):
         "name": "Nga", "email": "nga@example.com", "dietType": "normal",
         "householdSize": 1, "weeklyBudgetCents": None, "allergens": [],
         "market": None, "cuisines": [], "whiteList": [], "blackList": [],
-        "healthGoal": None, "age": None, "gender": None,
+        "healthGoal": None, "age": None, "gender": None, "weekTimeAvailability": None,
     }
 
 
@@ -303,17 +302,34 @@ def _add_candidates(factory, *names, to_current_plan=False):
         return [row.id for row in rows]
 
 
+class _Calls(list):
+    """The planner's calls, with the critic's reviews and script alongside."""
+
+
 @pytest.fixture
 def fake_planner(monkeypatch):
-    """Stand-in for the stubbed planner: takes the first N candidates, records calls."""
-    calls = []
+    """Stand-ins for the LLM planner and the critic.
+
+    The planner takes the first N candidates and records its calls; the critic
+    records what it reviewed and passes, unless `verdicts` holds a scripted one.
+    """
+    calls = _Calls()
+    reviews = []
+    verdicts = []
 
     def fake_plan(recipes, offers, number_of_meals, **kwargs):
         calls.append({"recipes": recipes, "offers": offers, "n": number_of_meals, **kwargs})
         return Plan(recipes=recipes[:number_of_meals], grocery_list=[], total_cost=0.0)
 
+    def fake_critique(plan, user_pref, fixed=frozenset(), **kwargs):
+        reviews.append({"plan": plan, "user_pref": user_pref, "fixed": fixed})
+        return verdicts.pop(0) if verdicts else Critique(passed=True)
+
     monkeypatch.setattr(planner, "plan", fake_plan)
     monkeypatch.setattr(planner, "plan_with_agent", fake_plan)
+    monkeypatch.setattr(critic, "critique", fake_critique)
+    calls.reviews = reviews
+    calls.verdicts = verdicts
     return calls
 
 
@@ -415,13 +431,17 @@ def test_refine_quota_is_two_per_week_and_resets(client, db, fake_planner):
     assert client.get("/generate/quota", headers=_auth(token)).json()["remaining"] == 2
 
 
-def test_failed_refine_does_not_use_the_quota(client, db):
+def test_failed_refine_does_not_use_the_quota(client, db, monkeypatch):
     token = _signup(client)["token"]
     _seed_plan(db)
     _add_candidates(db, "Anything")
-    # The real planner is still stubbed, so this fails on our side.
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("OPENROUTER_API_KEY is not set")
+
+    monkeypatch.setattr(planner, "plan_with_agent", unavailable)
     response = client.post("/generate/refine", headers=_auth(token), json={"mode": "replace"})
-    assert response.status_code == 501
+    assert response.status_code == 503
     assert client.get("/generate/quota", headers=_auth(token)).json()["remaining"] == 2
 
 
@@ -437,3 +457,82 @@ def test_week_bounds_survive_the_dst_switch():
     # Naive UTC, like created_at.
     assert start == datetime(2026, 3, 22, 23, tzinfo=UTC).replace(tzinfo=None)  # Mon 00:00 CET
     assert end == datetime(2026, 3, 29, 22, tzinfo=UTC).replace(tzinfo=None)  # Mon 00:00 CEST
+
+
+# --- cooking time and the critic loop -------------------------------------------
+
+WEEK = [30, 45, 0, 60, 15, 120, 1440]
+
+
+def test_week_time_is_saved_and_validated(client):
+    token = _signup(client)["token"]
+    saved = client.post(
+        "/auth/me/preferences", headers=_auth(token), json={"weekTimeAvailability": WEEK}
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["weekTimeAvailability"] == WEEK
+
+    for bad in ([30] * 6, [30] * 8, [20] + [30] * 6, [1455] + [0] * 6, [-15] + [0] * 6):
+        response = client.post(
+            "/auth/me/preferences", headers=_auth(token), json={"weekTimeAvailability": bad}
+        )
+        assert response.status_code == 422, bad
+
+    cleared = client.post(
+        "/auth/me/preferences", headers=_auth(token), json={"weekTimeAvailability": None}
+    )
+    assert cleared.json()["weekTimeAvailability"] is None
+
+
+def _set_week(client, token, week):
+    client.post("/auth/me/preferences", headers=_auth(token), json={"weekTimeAvailability": week})
+
+
+def test_refine_sends_the_week_and_the_kept_recipes_to_the_critic(client, db, fake_planner):
+    token = _signup(client)["token"]
+    kept = _seed_plan(db)  # Pumpkin Gnocchi, 35 min
+    _add_candidates(db, "Fresh Salad")
+    client.post(f"/recipes/{kept}/meal-plan", headers=_auth(token))
+    _set_week(client, token, [60] * 7)
+
+    fake_planner.verdicts.append(
+        Critique(passed=False, issues=["Two pumpkin dishes."], suggestions=["Add fish."])
+    )
+    response = client.post(
+        "/generate/refine", headers=_auth(token), json={"mode": "replace", "note": "light"}
+    )
+    assert response.status_code == 200, response.text
+
+    first = fake_planner.reviews[0]
+    assert [r.name for r in first["plan"].recipes] == ["Pumpkin Gnocchi", "Fresh Salad"]
+    assert first["fixed"] == frozenset({"Pumpkin Gnocchi"})
+    assert first["user_pref"].week_time_availability == [60] * 7
+    assert first["user_pref"].notes == "light"
+    # The rejection went back to the planner for a second round, which passed.
+    assert fake_planner[1]["feedback"].issues == ["Two pumpkin dishes."]
+    assert len(fake_planner.reviews) == 2
+
+    with db() as session:
+        generation = session.query(Generation).filter_by(kind="refine").one()
+        assert (generation.passed, generation.model) == (True, "agent+critic")
+
+
+def test_the_weekly_plan_skips_recipes_longer_than_any_day(client, db, fake_planner):
+    token = _signup(client)["token"]
+    with db() as session:
+        # Offers to plan from, but no plan yet this week.
+        session.add(Supermarket(name="EDEKA", addresses=[Address(market_id="1", offers=[
+            Offer(title="Kürbis", price=1.0, valid_till=datetime.now(STORE_TZ).date()),
+        ])]))
+        session.add_all([
+            RecipeCache(name="Slow roast", servings=4, total_time=180),
+            RecipeCache(name="Quick soup", servings=2, total_time=25),
+        ])
+        session.commit()
+    _set_week(client, token, [30, 30, 0, 45, 0, 0, 0])
+
+    response = client.post("/generate", headers=_auth(token))
+    assert response.status_code == 200, response.text
+    assert [r.name for r in fake_planner[0]["recipes"]] == ["Quick soup"]
+    # The free weekly plan never calls the critic.
+    assert fake_planner.reviews == []

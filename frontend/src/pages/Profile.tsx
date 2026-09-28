@@ -4,12 +4,13 @@ import { fetchRecipes, fetchUser, savePreferences } from '../api/client'
 import type { Allergen, DietType, Recipe, User } from '../api/types'
 import { ALLERGENS, DIETS } from '../api/vocabulary'
 import { IngredientListEditor } from '../components/IngredientListEditor'
+import { WeekTimeEditor, WeekTimeSummary } from '../components/WeekTime'
 import { formatPrice } from '../format'
 import { t } from '../i18n/strings'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
-function sameList(a: readonly string[], b: readonly string[]): boolean {
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((name, index) => name === b[index])
 }
 
@@ -29,6 +30,7 @@ export function Profile() {
   const [allergens, setAllergens] = useState<Allergen[]>([])
   const [whiteList, setWhiteList] = useState<string[]>([])
   const [blackList, setBlackList] = useState<string[]>([])
+  const [weekTime, setWeekTime] = useState<number[] | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [editing, setEditing] = useState(false)
 
@@ -37,6 +39,7 @@ export function Profile() {
     setAllergens(saved.allergens)
     setWhiteList(saved.whiteList)
     setBlackList(saved.blackList)
+    setWeekTime(saved.weekTimeAvailability)
   }
 
   useEffect(() => {
@@ -60,7 +63,9 @@ export function Profile() {
     dietType !== user.dietType ||
     !sameSet(allergens, user.allergens) ||
     !sameList(whiteList, user.whiteList) ||
-    !sameList(blackList, user.blackList)
+    !sameList(blackList, user.blackList) ||
+    !sameList(weekTime ?? [], user.weekTimeAvailability ?? []) ||
+    (weekTime === null) !== (user.weekTimeAvailability === null)
 
   function toggleAllergen(allergen: Allergen) {
     setAllergens((list) =>
@@ -96,7 +101,13 @@ export function Profile() {
     }
     setSaveState('saving')
     try {
-      const updated = await savePreferences({ dietType, allergens, whiteList, blackList })
+      const updated = await savePreferences({
+        dietType,
+        allergens,
+        whiteList,
+        blackList,
+        weekTimeAvailability: weekTime,
+      })
       setUser(updated)
       setDraftFrom(updated)
       setSaveState('saved')
@@ -180,6 +191,14 @@ export function Profile() {
                   ))}
                 </div>
               </fieldset>
+
+              <WeekTimeEditor
+                week={weekTime}
+                onChange={(week) => {
+                  setWeekTime(week)
+                  setSaveState('idle')
+                }}
+              />
 
               <h3>{t.profile.ingredientsHeading}</h3>
               <IngredientListEditor
@@ -273,6 +292,7 @@ export function Profile() {
                   <dd>{user.gender ?? t.profile.notSet}</dd>
                 </div>
               </dl>
+              <WeekTimeSummary week={user.weekTimeAvailability} />
             </>
           )}
           {/* Always mounted, so screen readers announce the change. */}

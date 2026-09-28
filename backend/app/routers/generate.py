@@ -6,17 +6,40 @@ contracts, hands them to the planner and persists the `Plan` it returns as a
 
 Two kinds of run:
 
-- the weekly plan (`POST /generate`), once per week and free;
+- the weekly plan (`POST /generate`), once per week and free: the greedy
+  planner, with recipes too long for any day filtered out in code;
 - a refine (`POST /generate/refine`): keeps the recipes the user planned and
-  swaps the rest, optionally favouring what is already in their fridge.
-  Limited per week (app/quota.py) because it can spend LLM tokens.
+  swaps the rest, optionally favouring what is already in their fridge. The
+  planner agent and the critic run in a loop (agents/loop.py), and the
+  critic's verdict is stored on the Generation. Limited per week
+  (app/quota.py) because it spends LLM tokens.
 """
 
 import logging
 from collections.abc import Iterable
 from datetime import datetime
 
+from cheaprecipe.agents import critic, loop, planner
+from cheaprecipe.agents.contracts import (
+    Critique,
+    Ingredient,
+    Item,
+    Plan,
+    Quantity,
+    Recipe,
+    UserPreference,
+)
+from cheaprecipe.db.models import (
+    Address,
+    Generation,
+    GenerationItem,
+    Offer,
+    RecipeCache,
+    User,
+)
+from cheaprecipe.vocabulary import CUISINES
 from fastapi import APIRouter, HTTPException, status
+from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import or_, select
 
 from app.deps import CurrentUser, SessionDep
@@ -29,17 +52,6 @@ from app.schemas.generate import (
     RefineResponse,
 )
 from app.schemas.recipes import Recipe as RecipeOut
-from cheaprecipe.agents import planner
-from cheaprecipe.agents.contracts import Ingredient, Item, Plan, Quantity, Recipe
-from cheaprecipe.db.models import (
-    Address,
-    Generation,
-    GenerationItem,
-    Offer,
-    RecipeCache,
-    User,
-)
-from cheaprecipe.vocabulary import CUISINES
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +163,21 @@ def _pantry_items(names: Iterable[str]) -> list[Item]:
     ]
 
 
+def _max_day_minutes(user: User) -> int | None:
+    """The freest day's cooking time, or None when the user has not said."""
+    pref = user.preference
+    week = pref.week_time_availability if pref else None
+    return max(week) if week else None
+
+
+def _user_pref(user: User, note: str | None) -> UserPreference:
+    pref = user.preference
+    return UserPreference(
+        week_time_availability=pref.week_time_availability if pref else None,
+        notes=note,
+    )
+
+
 def _run_planner(
     session,
     user: User,
@@ -158,10 +185,21 @@ def _run_planner(
     exclude_ids: set[int] = frozenset(),
     pantry_items: Iterable[str] = (),
     note: str | None = None,
-) -> tuple[Plan, dict[str, RecipeCache]]:
-    """Plan from the current offers; returns the plan and its candidate rows by id."""
+    fixed: list[RecipeCache] | None = None,
+) -> tuple[Plan, dict[str, RecipeCache], Critique | None]:
+    """Plan from the current offers.
+
+    Returns the plan, its candidate rows by id, and the critic's verdict.
+
+    Without `fixed` this is the free, deterministic greedy plan (no verdict).
+    With it — a refine topping up the recipes the user already chose — the
+    planner agent and the critic run in a loop (agents/loop.py), judging the
+    new recipes together with the chosen ones. That is the LLM path, and why
+    refines are rate-limited.
+    """
     pref = user.preference
     excluded = {a.lower() for a in (pref.allergens if pref else None) or []}
+    longest_day = _max_day_minutes(user)
 
     offers = _current_offers(session, user)
     offered = {o.canonical_ingredient_id for o in offers if o.canonical_ingredient_id}
@@ -177,24 +215,42 @@ def _run_planner(
         )
 
     candidates = [_candidate(row, offered) for row in rows.values()]
+    if longest_day is not None:
+        # A recipe longer than the freest day fits no day. Deterministic, so the
+        # free weekly plan respects cooking time without the critic.
+        candidates = [c for c in candidates if critic.total_minutes(c) <= longest_day]
+        if not candidates:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "No recipes fit your cooking time this week"
+            )
+
     items = _items(offers) + _pantry_items(pantry_items)
+    verdict = None
     try:
-        if note:
-            # The only path that calls the LLM.
-            plan = planner.plan_with_agent(candidates, items, number_of_meals, notes=note)
-        else:
+        if fixed is None:
             plan = planner.plan(candidates, items, number_of_meals)
+        else:
+            result = loop.run(
+                candidates,
+                items,
+                number_of_meals,
+                user_pref=_user_pref(user, note),
+                fixed=[_candidate(row, offered) for row in fixed],
+            )
+            plan, verdict = result.plan, result.critique
     except NotImplementedError as exc:
-        # The planner's basket arithmetic is still stubbed (agents/planner.py).
+        # A planning step that is still a stub.
         raise HTTPException(
             status.HTTP_501_NOT_IMPLEMENTED, "Meal planning is not implemented yet"
         ) from exc
-    except RuntimeError as exc:  # e.g. OPENROUTER_API_KEY missing
+    except (RuntimeError, AgentRunError) as exc:
+        # No OPENROUTER_API_KEY, the provider failing, or a model that never
+        # produced a valid answer within its request limit.
         log.error("planner unavailable: %s", exc)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "The planner is unavailable right now"
         ) from exc
-    return plan, rows
+    return plan, rows, verdict
 
 
 def _grocery_items(plan: Plan, skip_offer_ids: set[int] = frozenset()) -> list[GenerationItem]:
@@ -228,7 +284,7 @@ def generate(
             "This week is already planned; ask for new recipes instead",
         )
     body = body or GenerateRequest()
-    plan, rows = _run_planner(session, user, body.number_of_meals)
+    plan, rows, _ = _run_planner(session, user, body.number_of_meals)
 
     pref = user.preference
     generation = Generation(
@@ -276,9 +332,9 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
         )
         for recipe in generation.recipes
     }
-    plan, rows = _run_planner(
+    plan, rows, verdict = _run_planner(
         session, user, count, exclude_ids=seen,
-        pantry_items=body.pantry_items or (), note=body.note,
+        pantry_items=body.pantry_items or (), note=body.note, fixed=planned,
     )
     new = [rows[r.external_id] for r in plan.recipes if r.external_id in rows]
     if not new:
@@ -309,10 +365,15 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
         user=user,
         kind="refine",
         diet_type=pref.diet_type if pref else None,
-        model="agent" if body.note else "greedy",
+        model="agent+critic",
         total_cost=plan.total_cost,
         pantry_items=body.pantry_items or None,
         note=body.note,
+        # The critic's verdict on the whole week, kept even when the rounds ran
+        # out without a pass — it says what is still wrong.
+        passed=verdict.passed if verdict else None,
+        issues=verdict.issues if verdict else None,
+        suggestions=verdict.suggestions if verdict else None,
         recipes=planned + new,
         planned_recipes=planned,
         items=carried + _grocery_items(plan, {i.offer_id for i in carried}),

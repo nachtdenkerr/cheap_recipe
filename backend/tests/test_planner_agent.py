@@ -7,12 +7,11 @@ model can act on rather than an exception that ends the run.
 """
 
 import pytest
+from cheaprecipe.agents.contracts import Ingredient, Plan, Quantity, Recipe
+from cheaprecipe.agents.planner import PlanningContext, build_planner
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-
-from cheaprecipe.agents.contracts import Ingredient, Plan, Quantity, Recipe
-from cheaprecipe.agents.planner import PlanningContext, build_planner
 
 RIBOLLITA = Recipe(
     name="Ribollita",

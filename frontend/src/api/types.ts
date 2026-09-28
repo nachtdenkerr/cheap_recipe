@@ -102,6 +102,8 @@ export interface User {
   blackList: string[]
   age: number | null
   gender: string | null
+  /** Minutes free for cooking each day, Monday first; null until set. */
+  weekTimeAvailability: number[] | null
 }
 
 /** Body of POST /auth/me/preferences — only the fields sent are changed. */
@@ -119,6 +121,7 @@ export type PreferencesUpdate = Partial<
     | 'blackList'
     | 'age'
     | 'gender'
+    | 'weekTimeAvailability'
   >
 >
 

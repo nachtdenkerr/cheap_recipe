@@ -11,11 +11,11 @@ planner returns, so a failed run leaves nothing to count.
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from cheaprecipe.db.models import Generation, User
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.schemas.generate import RefineQuota
-from cheaprecipe.db.models import Generation, User
 
 REFINES_PER_WEEK = 2
 

@@ -14,6 +14,15 @@ from pydantic import BaseModel, Field
 from cheaprecipe.vocabulary import CookingLevel, Cuisine, DietType, Unit
 
 
+class UserPreference(BaseModel):
+    """What the critic checks a plan against."""
+
+    # Minutes free for cooking on each day, Monday first; 0 means no cooking.
+    week_time_availability: list[int] | None = None
+    # Free text, e.g. "nothing spicy".
+    notes: str | None = None
+
+
 class Quantity(BaseModel):
     amount: float
     unit: Unit
@@ -69,9 +78,18 @@ class Plan(BaseModel):
 
 
 class Critique(BaseModel):
-    passed: bool
-    waste_grams: float
-    total_cost: float
-    nutrition_ok: bool
-    issues: list[str] = Field(default_factory=list)
-    suggestions: list[str] = Field(default_factory=list)
+    """The critic's verdict on a plan, fed back to the planner if it fails."""
+
+    passed: bool = Field(description="True only if the plan needs no changes.")
+    issues: list[str] = Field(
+        default_factory=list, description="What is wrong with the plan, one per entry."
+    )
+    suggestions: list[str] = Field(
+        default_factory=list, description="How to fix it, one per entry."
+    )
+    # By name: recipes are identified by name throughout the agent layer
+    # (PlanningContext.find), and have no other id the model could see.
+    exchange: list[str] = Field(
+        default_factory=list,
+        description="Exact names of the recipes in the plan that should be replaced.",
+    )

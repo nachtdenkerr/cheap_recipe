@@ -2,10 +2,10 @@
 
 from typing import Annotated
 
+from cheaprecipe.vocabulary import Allergen, CommonDiet, Cuisine
 from pydantic import AfterValidator, Field
 
 from app.schemas import CamelModel
-from cheaprecipe.vocabulary import Allergen, CommonDiet, Cuisine
 
 # A shape check only; whether the address exists is not the API's to decide.
 Email = Annotated[
@@ -42,6 +42,8 @@ class User(CamelModel):
     health_goal: str | None
     age: int | None
     gender: str | None
+    # Minutes free for cooking each day, Monday first; null until set.
+    week_time_availability: list[int] | None
 
 
 class AuthSession(CamelModel):
@@ -67,6 +69,12 @@ IngredientList = Annotated[
 ]
 
 
+# 0 (no cooking that day) to 24 h, in 15-minute steps — what the Profile
+# page's dropdowns offer.
+DayMinutes = Annotated[int, Field(ge=0, le=24 * 60, multiple_of=15)]
+WeekTime = Annotated[list[DayMinutes] | None, Field(min_length=7, max_length=7)]
+
+
 class PreferencesUpdate(CamelModel):
     """Only the fields sent are changed."""
 
@@ -81,5 +89,7 @@ class PreferencesUpdate(CamelModel):
     health_goal: str | None = Field(default=None, max_length=120)
     age: int | None = Field(default=None, ge=1, le=120)
     gender: str | None = Field(default=None, max_length=30)
+    # One entry per day, Monday first; null clears it.
+    week_time_availability: WeekTime = None
     # A supermarket chain name, e.g. "EDEKA".
     market: str | None = None
