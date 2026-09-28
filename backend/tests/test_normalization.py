@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-
 from cheaprecipe import vocabulary
 from cheaprecipe.normalization import normalize
 

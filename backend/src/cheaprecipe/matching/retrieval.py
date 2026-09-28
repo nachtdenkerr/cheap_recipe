@@ -12,6 +12,11 @@ Two endpoints, deliberately kept side by side:
 `complex_search` is the one that can actually honour a user profile: filtering
 *offers* by diet does not stop findByIngredients returning a recipe with
 chicken in it.
+
+findByIngredients results are only ids, titles and the used/missed
+ingredient split; `with_information` fills in the rest (ingredient amounts,
+timings, dish types) with one informationBulk call, which complexSearch
+already includes.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ log = logging.getLogger(__name__)
 
 FIND_BY_INGREDIENTS_URL = "https://api.spoonacular.com/recipes/findByIngredients"
 COMPLEX_SEARCH_URL = "https://api.spoonacular.com/recipes/complexSearch"
+INFORMATION_BULK_URL = "https://api.spoonacular.com/recipes/informationBulk"
 
 DEFAULT_MAX_INGREDIENTS = 120
 DEFAULT_RECIPE_NUMBER = 40
@@ -201,6 +207,42 @@ def find_by_ingredients(
         log.warning("no recipes matched %s", ", ".join(query))
 
     return recipes
+
+
+# Fields findByIngredients knows and informationBulk does not: which of our
+# ingredients each recipe uses. Kept from the search result.
+_SEARCH_FIELDS = ("usedIngredients", "missedIngredients", "unusedIngredients",
+                  "usedIngredientCount", "missedIngredientCount")
+
+
+def with_information(found: list[dict], api_key: str | None = None) -> list[dict]:
+    """findByIngredients results, completed with their full recipe information.
+
+    One informationBulk request for all of them: ingredients with metric
+    amounts, timings, dish types, cuisines and diets — what parsing, the
+    meals-only filter and the diet filter need. Costs more quota than the
+    search itself (roughly half a point per recipe).
+    """
+    if not found:
+        return []
+    ids = [recipe["id"] for recipe in found]
+    details = _get(
+        INFORMATION_BULK_URL,
+        {"ids": _csv(str(i) for i in ids), "includeNutrition": False, "apiKey": _api_key(api_key)},
+    )
+    by_id = {recipe["id"]: recipe for recipe in details}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        log.warning("informationBulk returned nothing for %d recipes: %s", len(missing), missing)
+
+    completed = []
+    for recipe in found:
+        info = by_id.get(recipe["id"])
+        if info is None:
+            continue
+        completed.append({**info, **{k: recipe[k] for k in _SEARCH_FIELDS if k in recipe}})
+    log.info("informationBulk completed %d/%d recipes", len(completed), len(found))
+    return completed
 
 
 def retrieve_candidates(items: list[dict], limit: int = DEFAULT_RECIPE_NUMBER) -> list[dict]:

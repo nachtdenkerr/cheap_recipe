@@ -6,12 +6,20 @@ Two stages-of-stages, each runnable on its own:
     recipes  read classified CSV -> select -> retrieve
 
 A CSV is written after every step so a failed or expensive LLM step can be
-rerun against the checkpoint instead of re-fetching everything upstream.
+rerun against the checkpoint instead of re-fetching everything upstream. Each
+file is named for the store, what it holds and the stage that wrote it, so an
+EDEKA run and an ALDI run never overwrite each other:
+
+    data/edeka_offers_raw.csv          as fetched
+    data/edeka_offers_translated.csv   + ingredient_en
+    data/edeka_offers_classified.csv   + can_cook / use_baking / use_drinks
+    data/edeka_recipes.json            Spoonacular recipes for those offers
 
     uv run cheaprecipe offers
     uv run cheaprecipe offers --store aldi
     uv run cheaprecipe offers --skip-llm      # deterministic steps only
     uv run cheaprecipe recipes --diet vegetarian --use cooking
+    uv run cheaprecipe recipes --store aldi --cuisine Thai
 """
 
 from __future__ import annotations
@@ -33,10 +41,27 @@ from cheaprecipe.selection import select
 
 log = logging.getLogger(__name__)
 
-TRANSLATED_CSV = "translated.csv"
-CLASSIFIED_CSV = "new_columns.csv"
-RAW_CSV = "raw_offers.csv"
-RECIPES_JSON = "recipes.json"
+
+
+def raw_offers_csv(store: vocabulary.Store) -> str:
+    """Offers as fetched, before any cleaning."""
+    return f"{store}_offers_raw.csv"
+
+
+def translated_offers_csv(store: vocabulary.Store) -> str:
+    """Cleaned offers with their English ingredient name."""
+    return f"{store}_offers_translated.csv"
+
+
+def classified_offers_csv(store: vocabulary.Store) -> str:
+    """Translated offers with the cooking/baking/drinks flags — the input to recipes."""
+    return f"{store}_offers_classified.csv"
+
+
+def recipes_json(store: vocabulary.Store) -> str:
+    """Spoonacular's recipes for that store's classified offers."""
+    return f"{store}_recipes.json"
+
 
 def _checkpoint(df: pd.DataFrame, path: Path) -> None:
     """Write a stage result and say where it went."""
@@ -81,7 +106,7 @@ def build_offers(
 
     with stage("fetch_offers", log, store=store, store_id=store_id):
         df = _fetch_offers(store, store_id)
-        _checkpoint(df, out_dir / RAW_CSV)
+        _checkpoint(df, out_dir / raw_offers_csv(store))
 
     with stage("clean_offers", log, store=store):
         df = normalize.clean_offers(df, store)
@@ -92,11 +117,11 @@ def build_offers(
 
     with stage("translate_ingredients", log):
         df = ingredients.add_ingredient_column(df, col_name="title")
-        _checkpoint(df, out_dir / TRANSLATED_CSV)
+        _checkpoint(df, out_dir / translated_offers_csv(store))
 
     with stage("classify_ingredients", log):
         df = classify.add_classification_columns(df)
-        _checkpoint(df, out_dir / CLASSIFIED_CSV)
+        _checkpoint(df, out_dir / classified_offers_csv(store))
 
     return df
 
@@ -104,19 +129,20 @@ def build_offers(
 def build_recipes(
     offers_path: Path | None = None,
     out_path: Path | None = None,
+    store: vocabulary.Store = "edeka",
     diet_type: str = "normal",
     use: str = "cooking",
     number: int = retrieval.DEFAULT_RECIPE_NUMBER,
     cuisine: list[str] | None = None,
 ) -> list[dict]:
     """Select from the classified offers and retrieve candidate recipes."""
-    offers_path = Path(offers_path or DATA_DIR / CLASSIFIED_CSV)
-    out_path = Path(out_path or DATA_DIR / RECIPES_JSON)
+    offers_path = Path(offers_path or DATA_DIR / classified_offers_csv(store))
+    out_path = Path(out_path or DATA_DIR / recipes_json(store))
 
     with stage("read_offers", log, path=str(offers_path)):
         if not offers_path.exists():
             raise FileNotFoundError(
-                f"{offers_path} does not exist — run `cheaprecipe offers` first."
+                f"{offers_path} does not exist — run `cheaprecipe offers --store {store}` first."
             )
         df = pd.read_csv(offers_path)
         log.info("read %d classified offers", len(df))
@@ -132,13 +158,23 @@ def build_recipes(
     with stage("retrieve_recipes", log, number=number, diet=diet):
         if diet or cuisine:
             # complexSearch is the only endpoint that filters by diet or
-            # cuisine. Offers carry neither, so a preference that does not
-            # reach this call is a preference that is silently ignored.
+            # cuisine, and it does so across Spoonacular's whole catalogue.
+            # Offers carry neither, so a preference that does not reach this
+            # call is a preference that is silently ignored.
             recipes = retrieval.complex_search(
                 names, number=number, cuisine=cuisine, diet=diet
             )
         else:
-            recipes = retrieval.find_by_ingredients(names, number=number)
+            # findByIngredients returns only ids and the used/missed split;
+            # informationBulk fills in what parsing needs.
+            recipes = retrieval.with_information(
+                retrieval.find_by_ingredients(names, number=number)
+            )
+
+    if not recipes:
+        # Keep the last usable result rather than replacing it with nothing.
+        log.warning("no recipes retrieved; %s left unchanged", out_path)
+        return recipes
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
@@ -181,8 +217,16 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     recipes = subparsers.add_parser("recipes", help="retrieve recipes for the offers")
-    recipes.add_argument("--offers", type=Path, default=DATA_DIR / CLASSIFIED_CSV)
-    recipes.add_argument("--out", type=Path, default=DATA_DIR / RECIPES_JSON)
+    recipes.add_argument(
+        "--store",
+        default="edeka",
+        choices=vocabulary.STORES,
+        help="whose classified offers to read; also names the output file",
+    )
+    recipes.add_argument(
+        "--offers", type=Path, help="default: data/<store>_offers_classified.csv"
+    )
+    recipes.add_argument("--out", type=Path, help="default: data/<store>_recipes.json")
     recipes.add_argument(
         "--diet",
         default="normal",
@@ -218,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             build_recipes(
                 offers_path=args.offers,
                 out_path=args.out,
+                store=args.store,
                 diet_type=args.diet,
                 use=args.use,
                 number=args.number,

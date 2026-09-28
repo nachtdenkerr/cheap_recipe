@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from cheaprecipe.normalization import normalize, quantity
 
 
@@ -91,9 +90,9 @@ def test_drop_unpriced_removes_discount_promotions():
     assert normalize.drop_unpriced(df)["title"].tolist() == ["Salami"]
 
 
-# The first checkpoint the pipeline writes (pipeline.RAW_CSV); descriptions
+# The first checkpoint the pipeline writes (pipeline.raw_offers_csv); descriptions
 # and prices are untouched there, which is all this needs.
-OFFERS_CSV = Path(__file__).resolve().parents[1] / "data" / "raw_offers.csv"
+OFFERS_CSV = Path(__file__).resolve().parents[1] / "data" / "edeka_offers_raw.csv"
 
 
 @pytest.mark.skipif(not OFFERS_CSV.exists(), reason="no scraped offers checked in")

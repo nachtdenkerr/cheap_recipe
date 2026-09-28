@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-
 from cheaprecipe import vocabulary
 from cheaprecipe.agents import contracts
 from cheaprecipe.selection import select

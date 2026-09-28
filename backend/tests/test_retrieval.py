@@ -5,7 +5,6 @@ than on Spoonacular's data.
 """
 
 import pytest
-
 from cheaprecipe.matching import retrieval
 
 
@@ -104,3 +103,38 @@ def test_missing_key_is_named(monkeypatch):
     monkeypatch.setattr(retrieval, "spoonacular_api_key", lambda: None)
     with pytest.raises(RuntimeError, match="SPOONACULAR_API_KEY"):
         retrieval.complex_search(["avocado"])
+
+
+# --- findByIngredients + informationBulk --------------------------------------
+
+def test_with_information_makes_one_bulk_call_and_keeps_the_search_fields(monkeypatch):
+    calls = []
+    info = [
+        {"id": 2, "title": "B", "readyInMinutes": 20, "extendedIngredients": []},
+        {"id": 1, "title": "A", "readyInMinutes": 30, "extendedIngredients": []},
+    ]
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append((url, params))
+        return FakeResponse(info)
+
+    monkeypatch.setattr(retrieval.requests, "get", fake_get)
+    found = [
+        {"id": 1, "title": "A", "usedIngredients": [{"name": "leek"}], "usedIngredientCount": 1},
+        {"id": 2, "title": "B", "usedIngredients": [], "usedIngredientCount": 0},
+        {"id": 3, "title": "gone"},
+    ]
+    completed = retrieval.with_information(found, api_key="k")
+
+    assert len(calls) == 1
+    assert calls[0][0] == retrieval.INFORMATION_BULK_URL
+    assert calls[0][1]["ids"] == "1,2,3"
+    # Search order kept; details merged; a recipe without details dropped.
+    assert [r["id"] for r in completed] == [1, 2]
+    assert completed[0]["readyInMinutes"] == 30
+    assert completed[0]["usedIngredients"] == [{"name": "leek"}]
+
+
+def test_with_information_of_nothing_makes_no_call(monkeypatch):
+    monkeypatch.setattr(retrieval.requests, "get", lambda *a, **k: pytest.fail("called"))
+    assert retrieval.with_information([], api_key="k") == []

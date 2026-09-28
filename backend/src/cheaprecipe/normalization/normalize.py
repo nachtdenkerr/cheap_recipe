@@ -35,9 +35,9 @@ def extract_weekday_from_title(title: str | None) -> int | None:
     if not isinstance(title, str):
         return None
 
-    for name in WEEKDAY_MAP:
+    for name, value in WEEKDAY_MAP.items():
         if name in title:
-            return WEEKDAY_MAP[name]
+            return value
     return None
 
 

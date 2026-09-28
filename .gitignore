@@ -213,3 +213,4 @@ backend/data/*.db-journal
 backend/data/*.sqlite3
 backend/data/*.csv
 backend/data/*.json
+.claude
