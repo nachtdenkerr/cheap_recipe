@@ -16,6 +16,8 @@ import type {
   RefineResponse,
   ShoppingListItem,
   SignupRequest,
+  PlanningJob,
+  PlanReview,
   User,
   WeekPlan,
 } from './types'
@@ -57,15 +59,27 @@ const MAX_DAYS_PER_COOKING = 3
  * servings ÷ household meals, on following days, at most three.
  */
 export function fetchWeekPlan(): Promise<WeekPlan> {
-  const meals = (['breakfast', 'lunch', 'dinner'] as const).filter((m) => user.mealTypes.includes(m))
-  const grid = WEEK.map(() => new Map(meals.map((m) => [m, null as null | { id: string; title: string; leftover: boolean }])))
+  const meals = (['breakfast', 'lunch', 'dinner'] as const).filter((m) =>
+    user.mealTypes.includes(m),
+  )
+  const grid = WEEK.map(
+    () =>
+      new Map(
+        meals.map((m) => [m, null as null | { id: string; title: string; leftover: boolean }]),
+      ),
+  )
   const spare: WeekPlan['spare'] = []
   const planned = recipes.filter((r) => r.inMealPlan)
   const slotsFor = (course?: string) =>
     course === 'breakfast' && meals.includes('breakfast')
       ? (['breakfast'] as const)
       : meals.filter((m) => m !== 'breakfast')
-  const place = (recipe: (typeof planned)[number], days: number[], leftover: boolean, latestFirst = false) => {
+  const place = (
+    recipe: (typeof planned)[number],
+    days: number[],
+    leftover: boolean,
+    latestFirst = false,
+  ) => {
     const order = latestFirst ? [...slotsFor(recipe.course)].reverse() : slotsFor(recipe.course)
     for (const day of days) {
       const meal = order.find((m) => grid[day].get(m) === null)
@@ -82,7 +96,10 @@ export function fetchWeekPlan(): Promise<WeekPlan> {
   const isBreakfast = (r: (typeof planned)[number]) => slotsFor(r.course)[0] === 'breakfast'
   for (const group of [planned.filter(isBreakfast), planned.filter((r) => !isBreakfast(r))]) {
     group.forEach((recipe, rank) => {
-      const start = group.length <= WEEK.length ? Math.floor((rank * WEEK.length) / group.length) : rank % WEEK.length
+      const start =
+        group.length <= WEEK.length
+          ? Math.floor((rank * WEEK.length) / group.length)
+          : rank % WEEK.length
       const order = [...WEEK.keys()].slice(start).concat([...WEEK.keys()].slice(0, start))
       const day = place(recipe, order, false, true)
       if (day !== null) cooked.set(recipe.id, day)
@@ -103,7 +120,12 @@ export function fetchWeekPlan(): Promise<WeekPlan> {
         last = day
       }
     }
-    if (made > placed) spare.push({ recipeId: recipe.id, title: recipe.title, portions: made - placed })
+    if (made > placed)
+      spare.push({
+        recipeId: recipe.id,
+        title: recipe.title,
+        portions: made - placed,
+      })
   }
   const monday = new Date(`${OFFER_WEEK_START}T00:00:00`)
   const days = WEEK.map((day, index) => {
@@ -114,12 +136,113 @@ export function fetchWeekPlan(): Promise<WeekPlan> {
       date: date.toISOString().slice(0, 10),
       meals: meals.map((meal) => {
         const slot = grid[index].get(meal)
-        return { meal, recipeId: slot?.id ?? null, title: slot?.title ?? null, leftover: slot?.leftover ?? false }
+        return {
+          meal,
+          recipeId: slot?.id ?? null,
+          title: slot?.title ?? null,
+          leftover: slot?.leftover ?? false,
+        }
       }),
     }
   })
   const emptyMeals = days.reduce((n, d) => n + d.meals.filter((m) => !m.recipeId).length, 0)
-  return resolve({ mealTypes: [...meals], householdSize: user.householdSize, days, emptyMeals, spare })
+  return resolve({
+    mealTypes: [...meals],
+    householdSize: user.householdSize,
+    days,
+    emptyMeals,
+    spare,
+  })
+}
+
+// --- planning jobs: the real steps, on a timer ---------------------------------
+
+const MOCK_STEPS = [
+  "Checking this week's offers",
+  'Getting to know the new dishes',
+  'The planner is choosing recipes',
+  'The critic is reviewing the week',
+  'Writing up the methods',
+]
+const STEP_MS = 1400
+const mockJobs = new Map<
+  string,
+  {
+    job: PlanningJob
+    started: number
+    finish: () => Promise<Partial<PlanningJob>>
+  }
+>()
+
+function startMockJob(
+  kind: PlanningJob['kind'],
+  finish: () => Promise<Partial<PlanningJob>>,
+): Promise<PlanningJob> {
+  const id = `mock-${mockJobs.size + 1}`
+  const job: PlanningJob = {
+    id,
+    kind,
+    status: 'running',
+    steps: [MOCK_STEPS[0]],
+    recipes: null,
+    quota: null,
+    error: null,
+    errorStatus: null,
+  }
+  mockJobs.set(id, { job, started: Date.now(), finish })
+  return resolve({ ...job })
+}
+
+/** POST /generate/jobs/weekly */
+export function startWeeklyPlan(): Promise<PlanningJob> {
+  return startMockJob('weekly', async () => ({ recipes: await planWeek() }))
+}
+
+/** POST /generate/jobs/refine */
+export function startRecipeRequest(body: RefineRequest): Promise<PlanningJob> {
+  return startMockJob('refine', async () => {
+    try {
+      const response = await requestRecipes(body)
+      return { recipes: response.recipes, quota: response.quota }
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 500
+      return {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'failed',
+        errorStatus: status,
+      }
+    }
+  })
+}
+
+/** GET /generate/jobs/{id} — steps appear as time passes, then the result. */
+export async function fetchPlanningJob(id: string): Promise<PlanningJob> {
+  const entry = mockJobs.get(id)
+  if (!entry) throw new ApiError(404, 'No such planning job')
+  const reached = Math.min(
+    MOCK_STEPS.length,
+    1 + Math.floor((Date.now() - entry.started) / STEP_MS),
+  )
+  entry.job.steps = MOCK_STEPS.slice(0, reached)
+  if (entry.job.status === 'running' && Date.now() - entry.started > STEP_MS * MOCK_STEPS.length) {
+    entry.job = { ...entry.job, status: 'done', ...(await entry.finish()) }
+  }
+  return resolve({ ...entry.job })
+}
+
+/** GET /generate/review — a critic's verdict to show in the mock. */
+export function fetchPlanReview(): Promise<PlanReview | null> {
+  return resolve({
+    kind: 'weekly',
+    model: 'agent+critic',
+    passed: true,
+    assessment:
+      'A varied week: one pasta, a soup, a tart and two very different mains, built on different proteins. The pumpkin and butter on offer are used across three dishes, so little is left over.',
+    issues: [],
+    suggestions: [],
+    rounds: 2,
+    createdAt: '2025-11-17T09:00:00',
+  })
 }
 
 /** GET /markets — by name, street, town or postcode. */
@@ -127,7 +250,9 @@ export function searchMarkets(query: string): Promise<Market[]> {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   return resolve(
     markets.filter((market) => {
-      const text = [market.name, market.street, market.postalCode, market.city].join(' ').toLowerCase()
+      const text = [market.name, market.street, market.postalCode, market.city]
+        .join(' ')
+        .toLowerCase()
       return words.every((word) => text.includes(word))
     }),
   )
@@ -290,5 +415,8 @@ export async function requestRecipes(request: RefineRequest): Promise<RefineResp
   fresh.forEach((recipe) => seen.add(recipe.id))
   recipes.splice(0, recipes.length, ...planned, ...fresh)
   refinesUsed += 1
-  return resolve({ recipes: recipes.map((recipe) => ({ ...recipe })), quota: quota() })
+  return resolve({
+    recipes: recipes.map((recipe) => ({ ...recipe })),
+    quota: quota(),
+  })
 }

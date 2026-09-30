@@ -5,6 +5,16 @@ import type { RefineRequest } from '../api/types'
 import { t } from '../i18n/strings'
 import { IngredientListEditor } from './IngredientListEditor'
 
+/** What to tell the user when a recipe request fails — here, or on Home once it runs. */
+export function requestErrorText(error: unknown): string {
+  const status = error instanceof ApiError ? error.status : 0
+  return status === 429
+    ? t.request.errorQuota
+    : status === 409
+      ? t.request.errorNoneFit
+      : t.request.errorGeneric
+}
+
 interface Props {
   open: boolean
   onClose: () => void
@@ -70,14 +80,7 @@ export function RecipeRequestPanel({
         note: note.trim() || undefined,
       })
     } catch (caught) {
-      const status = caught instanceof ApiError ? caught.status : 0
-      setError(
-        status === 429
-          ? t.request.errorQuota
-          : status === 409
-            ? t.request.errorNoneFit
-            : t.request.errorGeneric,
-      )
+      setError(requestErrorText(caught))
     } finally {
       setSending(false)
     }

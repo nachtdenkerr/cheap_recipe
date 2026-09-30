@@ -1622,3 +1622,202 @@ dl {
     flex-direction: column;
   }
 }
+
+/* --- why this week ------------------------------------------------------- */
+
+.plan-review {
+  border-left: 4px solid var(--color-save);
+}
+
+.plan-review.is-open {
+  border-left-color: var(--color-accent);
+}
+
+.plan-review h2 {
+  font-size: 1.125rem;
+  margin: 0 0 8px;
+}
+
+.plan-review h3 {
+  font-size: 0.875rem;
+  margin: 12px 0 4px;
+}
+
+.plan-review-assessment {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.plan-review ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* --- planning: the bowl -------------------------------------------------- */
+
+:root {
+  --bowl: #9aa0a6;
+  --bowl-inside: #5f6368;
+  --bowl-rim: #c4c8cc;
+  --spoon: #b9a07a;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.planning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+}
+
+.bowl-scene {
+  position: relative;
+  width: 240px;
+  height: 220px;
+}
+
+.bowl-back,
+.bowl-front {
+  position: absolute;
+  left: 20px;
+  bottom: 0;
+}
+
+.bowl-back {
+  z-index: 0;
+}
+
+.bowl-front {
+  z-index: 3;
+}
+
+/* An ingredient falls from above the bowl, turns, and vanishes inside it. */
+.bowl-drop {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  font-size: 30px;
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-50%, -20px);
+  animation: bowl-drop 3.3s ease-in infinite;
+}
+
+@keyframes bowl-drop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20px) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 1;
+    transform: translate(-50%, 128px) rotate(260deg);
+  }
+  72%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 140px) rotate(300deg);
+  }
+}
+
+/* The spoon hangs from its handle and swings through the bowl. */
+.bowl-spoon {
+  position: absolute;
+  left: 118px;
+  top: 30px;
+  z-index: 2;
+  transform-origin: 50% 0%;
+  animation: bowl-stir 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes bowl-stir {
+  from {
+    transform: rotate(-22deg);
+  }
+  to {
+    transform: rotate(22deg);
+  }
+}
+
+.bowl-scene.is-ready .bowl-spoon {
+  animation: none;
+  transform: rotate(18deg);
+}
+
+/* The dish rises out of the bowl, settles, and fades. */
+.bowl-dish {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  z-index: 4;
+  font-size: 72px;
+  line-height: 1;
+  animation: bowl-dish 1.9s ease-out forwards;
+}
+
+@keyframes bowl-dish {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 60px) scale(0.3);
+  }
+  35% {
+    opacity: 1;
+    transform: translate(-50%, -40px) scale(1.25);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -30px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60px) scale(1);
+  }
+}
+
+.planning-step {
+  margin: 8px 0 0;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 1.125rem;
+  text-align: center;
+}
+
+.planning-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.planning-steps li::before {
+  content: '✓ ';
+  color: var(--color-save);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bowl-drop,
+  .bowl-spoon,
+  .bowl-dish {
+    animation: none;
+  }
+
+  .bowl-drop {
+    display: none;
+  }
+}

@@ -77,6 +77,25 @@ export const en = {
     setMarket: 'Choose a supermarket',
   },
 
+  planning: {
+    heading: 'Planning your week',
+    starting: 'Getting started…',
+    ready: 'Your week is ready!',
+  },
+
+  review: {
+    heading: 'Why this week',
+    passed: (rounds: number | null) =>
+      rounds && rounds > 1
+        ? `The critic approved this week after ${rounds} rounds with the planner.`
+        : 'The critic approved this week.',
+    notPassed: (rounds: number | null) =>
+      `The critic still had concerns after ${rounds ?? 'several'} rounds — this is the best week the planner found.`,
+    stillOpen: 'Still open',
+    tryInstead: 'What could help',
+    unreviewed: 'This week was planned before the critic reviewed every plan.',
+  },
+
   request: {
     heading: 'Ask for new recipes',
     intro: 'Recipes you added to your meal plan stay. The others are swapped for new ones.',

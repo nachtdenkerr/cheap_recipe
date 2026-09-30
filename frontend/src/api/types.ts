@@ -226,6 +226,38 @@ export interface WeekPlan {
   spare: { recipeId: string; title: string; portions: number }[]
 }
 
+/** POST /generate/jobs/weekly | /refine, GET /generate/jobs/{id} — a plan being made. */
+export interface PlanningJob {
+  id: string
+  kind: 'weekly' | 'refine'
+  status: 'running' | 'done' | 'failed'
+  /** What planning has done so far; the last is what it is doing now. */
+  steps: string[]
+  /** When done. */
+  recipes: Recipe[] | null
+  /** When a refine is done: the requests left. */
+  quota: RefineQuota | null
+  /** When failed: what the plain request would have answered. */
+  error: string | null
+  errorStatus: number | null
+}
+
+/** GET /generate/review — what the critic said about the current plan. */
+export interface PlanReview {
+  kind: 'weekly' | 'refine'
+  /** "agent+critic"; plans made before the agent planned every week say "greedy". */
+  model: string | null
+  /** null for a plan no critic reviewed */
+  passed: boolean | null
+  /** The critic's judgement of the week, in its own words. */
+  assessment: string | null
+  /** What it still holds against the week, when it did not pass. */
+  issues: string[]
+  suggestions: string[]
+  rounds: number | null
+  createdAt: string
+}
+
 /** POST /auth/login and /auth/signup */
 export interface AuthSession {
   token: string

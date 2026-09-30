@@ -18,6 +18,8 @@ import type {
   RefineResponse,
   ShoppingListItem,
   SignupRequest,
+  PlanningJob,
+  PlanReview,
   User,
   WeekPlan,
 } from './types'
@@ -147,6 +149,22 @@ export function fetchWeekPlan(): Promise<WeekPlan> {
 
 export function planWeek(): Promise<Recipe[]> {
   return request('POST', '/generate')
+}
+
+export function startWeeklyPlan(): Promise<PlanningJob> {
+  return request('POST', '/generate/jobs/weekly')
+}
+
+export function startRecipeRequest(body: RefineRequest): Promise<PlanningJob> {
+  return request('POST', '/generate/jobs/refine', body)
+}
+
+export function fetchPlanningJob(id: string): Promise<PlanningJob> {
+  return request('GET', `/generate/jobs/${encodeURIComponent(id)}`)
+}
+
+export function fetchPlanReview(): Promise<PlanReview | null> {
+  return request('GET', '/generate/review')
 }
 
 export function fetchRefineQuota(): Promise<RefineQuota> {
