@@ -44,6 +44,30 @@ Two rules shape the design:
   fewer unique titles, and each batch is one request. Naive per-row calls are
   the difference between a few seconds and a few minutes.
 
+## How a week is planned
+
+Every plan — the weekly one and each follow-up request — is made by the
+planner agent and reviewed by the critic agent, in a loop
+(`agents/loop.py`):
+
+1. **Code narrows the pool.** Recipes that break the user's diet, contain an
+   allergen or a disliked ingredient, take longer than their freest day, or
+   use fewer than 3 of this week's offers never reach a model.
+2. **The labeller says what each dish is** — its kind (pasta, rice, curry…)
+   and main ingredient — once per recipe, stored on it (`agents/labels.py`).
+3. **The planner agent chooses the week**, with deterministic tools:
+   `build_greedy_plan` (the cheapest, least wasteful week that keeps to the
+   variety rules), `estimate_leftovers`, `price_recipe`. It answers with
+   recipe names; the priced plan is built from them in code, and an answer
+   that breaks the rules is sent back to it before it counts.
+4. **The critic agent reviews the week**: it labels the dishes and judges
+   what needs taste — a sensible week, the user's notes. The variety rules
+   (one dish per kind, a main ingredient at most twice) are counted from the
+   labels in code, and cooking time against the user's week is computed.
+5. **A rejected week goes back to the planner** with every issue raised so
+   far, and it may not bring back a recipe already rejected. Up to 3 rounds;
+   the last plan is kept with the critic's open issues if none passes.
+
 ## Status
 
 The ingestion → selection → recipe-retrieval path runs end to end. Everything
@@ -55,9 +79,10 @@ downstream of it is scaffolded but not yet written:
 | `normalization/` cleaning, translation, classification | works |
 | `selection/` diet and use-case filtering | works |
 | `matching/` Spoonacular retrieval | works |
-| `agents/` planner, critic, loop | stub |
-| `calculation/` nutrition, cost, waste, allergens | stub |
-| `ranking/`, `db/`, `observability/`, `app/` API, `frontend/` | stub |
+| `agents/` planner, critic, labeller, loop | works |
+| `calculation/` cost, waste, allergens, diet, pantry | works |
+| `db/`, `observability/`, `app/` API, `frontend/` | works |
+| `ranking/`, nutrition | stub |
 
 Known rough edges: neither source is a documented API, so both can change shape
 without notice; one market and one ALDI category are hardcoded as the defaults;
@@ -103,16 +128,87 @@ uv run cheaprecipe offers --skip-llm
 
 # retrieve recipes for the classified offers
 uv run cheaprecipe recipes --diet vegetarian --use cooking
+
+# load both into the API's database (data/cheaprecipe.db); safe to re-run
+uv run cheaprecipe load
 ```
 
-Both commands run through `src/cheaprecipe/pipeline.py`, which is the only
-orchestration layer — there is no `scripts/` directory. Every stage logs what it
+The commands run through `src/cheaprecipe/pipeline.py`, the one orchestration
+layer; `scripts/dry_run_plan.py` plans from the saved files without a database
+(`--llm` adds the planner/critic loop). Every stage logs what it
 started, what it produced, and how many records it dropped on the way; add `-v`
 for per-batch LLM calls, token counts and HTTP detail. A failure logs the
 traceback against the stage that raised it and exits non-zero.
 
 Every model call goes through `src/cheaprecipe/llm.py`, which points the OpenAI
 SDK at OpenRouter. Changing model or vendor is one line there.
+
+Run the app — the API, then the frontend (http://localhost:5173, which proxies
+`/api` to the API):
+
+```bash
+cd backend && uv run uvicorn app.main:app --reload
+cd frontend && npm install && npm run dev      # VITE_USE_MOCK=true for mock data
+```
+
+### Home supermarkets
+
+Offers are per branch, so every user picks up to 3 home supermarkets in their
+profile, and their plans use those branches' offers only. Without one,
+planning answers "set your home supermarket first". The profile's search
+(`GET /markets?q=`) asks EDEKA's own market finder by name, street, town or
+postcode, and falls back to the branches already known when it is
+unreachable; ALDI SÜD is one entry, as its offers are the same nationwide. A
+newly chosen branch has its offers loaded in the background right away.
+
+### The weekly refresh
+
+Offers change every Monday, so the API keeps itself current: a background
+task (`app/scheduler.py`) runs `cheaprecipe/refresh.py` once a week for every
+branch some user has as a home supermarket, from Monday 05:00 German time — or
+as soon as the API starts, if it was off.
+
+1. this week's offers are fetched, classified and loaded (skipped if already
+   loaded — this step calls the LLM);
+2. for every diet any user has, plus no restriction, the recipe pool is checked:
+   fewer than 8 recipes that fit the diet and use 3+ of this week's offers, and
+   Spoonacular is searched for more.
+
+When one user's own filters (allergens, ingredients they don't eat, recipes
+already suggested) leave too few, the request tops the pool up for them, with
+those filters passed to Spoonacular. Searches are recorded (`recipe_fetch`) and
+capped per week to protect the quota; `weekly_refresh` records each run.
+
+```text
+WEEKLY_REFRESH=off          # don't run it (e.g. a cron runs `cheaprecipe weekly`)
+REFRESH_HOUR=5              # from when on Monday
+RECIPE_TOPUP=off            # no fetching during requests
+```
+
+`uv run cheaprecipe weekly` runs the same refresh by hand, for the same
+branches (EDEKA's default branch while no one has chosen one; `--force`
+refetches the offers).
+
+### Logs and traces
+
+Everything the pipeline and the API do is logged to the terminal and to
+`backend/logs/cheaprecipe.log` (rotating, gitignored): each plan, the
+planner's picks, each critic round with its issues. `LOG_LEVEL=DEBUG` for more;
+`LOG_FILE=` (empty) to turn the file off.
+
+For the agents' full traces — prompts, tool calls with arguments and results,
+answers, retries, tokens — run [Arize Phoenix](https://phoenix.arize.com)
+locally; nothing leaves your machine:
+
+```bash
+uvx arize-phoenix serve                     # UI on http://localhost:6006
+# in .env:  PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006
+cd backend && uv run --extra tracing uvicorn app.main:app --reload
+```
+
+Every plan is one trace (the planner/critic loop), tagged with the user and
+the request: `metadata.request` is `weekly` or `refine`, and a refine also
+carries `metadata.mode` and `metadata.note`.
 
 Tests:
 

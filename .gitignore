@@ -214,3 +214,11 @@ backend/data/*.sqlite3
 backend/data/*.csv
 backend/data/*.json
 .claude
+
+# The pipeline's and the API's log (backend/src/cheaprecipe/logging_setup.py)
+backend/logs/
+
+# Local backups of the database and pipeline files
+backend/data/*.bak
+backend/data/*.bak-*
+backend/data/*.csv.bak
