@@ -16,6 +16,7 @@ def test_pork_is_more_than_the_word(ingredient):
 
 @pytest.mark.parametrize("ingredient", [
     "chicken sausage", "turkey bacon", "beef steak", "vegetarian sausage", "onion", "hamburger buns",
+    "turkey kielbasa", "chicken chorizo", "turkey pepperoni",
 ])
 def test_what_is_not_pork(ingredient):
     assert not in_family(ingredient, "pork")

@@ -48,7 +48,8 @@ _ALIASES = {"poultry": "poultry", "shellfish": "seafood", "prawns": "seafood"}
 _NOT_ANIMAL = frozenset({"vegetarian", "vegan", "veggie", "meatless", "plant", "tofu", "seitan"})
 # Words of each animal that are shared cuts or products, not the animal itself:
 # "sausage" and "steak" are pork or beef only when no other animal is named.
-_SHARED = {"sausage", "steak", "salami", "bacon", "ham", "tenderloin", "frankfurter", "hotdog"}
+_SHARED = {"sausage", "steak", "salami", "bacon", "ham", "tenderloin", "frankfurter", "hotdog",
+           "kielbasa", "chorizo", "pepperoni", "bratwurst"}
 
 
 def _key(name: str) -> frozenset[str]:
