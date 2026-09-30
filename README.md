@@ -68,6 +68,36 @@ planner agent and reviewed by the critic agent, in a loop
    far, and it may not bring back a recipe already rejected. Up to 3 rounds;
    the last plan is kept with the critic's open issues if none passes.
 
+### Watching it plan
+
+Planning takes a minute or more, so the page starts it as a job
+(`POST /generate/jobs/weekly` or `/refine`, then `GET /generate/jobs/{id}`)
+and shows each step as the planning reports it — checking the offers,
+getting to know new dishes, each planner and critic round — while
+ingredients drop into a bowl. When the week is ready a dish rises out of
+it, and the recipes appear with the critic's assessment under "Why this
+week". `POST /generate` and `/generate/refine` still answer in one request.
+
+### Evaluating the planner
+
+`backend/evals` replays frozen weeks through the real planner and critic for
+a set of typical users (`evals/profiles.py`), and measures each week: did the
+critic pass it, rounds, tokens, cost against the greedy week, variety
+repeats, unsafe recipes (diet, allergen, dislike — must be 0), and empty
+meals in the grid.
+
+```bash
+cd backend
+uv run python -m evals.freeze --branch 10001604 --name edeka-frank   # this week, from the database
+uv run python -m evals.run                                         # every fixture × profile
+uv run python -m evals.run --profile no-pork --fixture edeka-frank
+```
+
+Each run writes `evals/results/<time>.json` and prints the change against
+the previous report. It uses real model calls (tokens) but never
+Spoonacular. Fixtures and reports hold store and Spoonacular data, so they
+stay local.
+
 ## Status
 
 The ingestion → selection → recipe-retrieval path runs end to end. Everything
@@ -150,6 +180,21 @@ Run the app — the API, then the frontend (http://localhost:5173, which proxies
 cd backend && uv run uvicorn app.main:app --reload
 cd frontend && npm install && npm run dev      # VITE_USE_MOCK=true for mock data
 ```
+
+### The database schema
+
+The schema is versioned with Alembic (`backend/src/cheaprecipe/db/migrations`).
+The API and the CLI bring the database up to date when they start; a
+database made before migrations existed is stamped as the baseline and keeps
+its data. After changing a model:
+
+```bash
+cd backend
+uv run alembic revision --autogenerate -m "what changed"   # review the file it writes
+uv run alembic upgrade head                                # or just restart the API
+```
+
+`tests/test_migrations.py` fails when a model changes without a migration.
 
 ### Home supermarkets
 
