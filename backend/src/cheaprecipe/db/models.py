@@ -557,6 +557,10 @@ class Generation(Base):
     nutrition_ok: Mapped[bool | None] = mapped_column(Boolean)
     issues: Mapped[list | None] = mapped_column(JSON)
     suggestions: Mapped[list | None] = mapped_column(JSON)
+    # The critic's judgement of the week in its own words (Critique.assessment),
+    # and how many planner/critic rounds it took.
+    assessment: Mapped[str | None] = mapped_column(Text)
+    rounds: Mapped[int | None]
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

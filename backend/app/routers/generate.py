@@ -26,16 +26,20 @@ import logging
 import os
 from collections.abc import Iterable
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 
+from app import jobs
 from app.deps import CurrentUser, SessionDep
 from app.methods import prepare_methods
 from app.presenters import favourite_ids, latest_generation, recipe_out, shopping_name
 from app.quota import generations_this_week, refine_quota, week_bounds
 from app.schemas.generate import (
     GenerateRequest,
+    PlanningJob,
+    PlanReview,
     RefineQuota,
     RefineRequest,
     RefineResponse,
@@ -68,6 +72,7 @@ from cheaprecipe.db.models import (
     RecipeCache,
     User,
 )
+from cheaprecipe.observability import progress
 from cheaprecipe.observability.tracing import trace_context
 from cheaprecipe.vocabulary import DEFAULT_MEAL_TYPES
 
@@ -221,10 +226,11 @@ def _run_planner(
     pantry_items: Iterable[str] = (),
     note: str | None = None,
     fixed: list[RecipeCache] = (),
-) -> tuple[Plan, dict[str, RecipeCache], Critique]:
+) -> tuple[Plan, dict[str, RecipeCache], Critique, int]:
     """Plan from the current offers: the planner agent and the critic, in a loop.
 
-    Returns the plan, its candidate rows by id, and the critic's verdict.
+    Returns the plan, its candidate rows by id, the critic's verdict, and
+    how many planner/critic rounds it took.
     `fixed` are recipes the user already chose (a refine): not candidates, but
     judged together with the new ones, as variety and time are the week's.
     """
@@ -234,6 +240,7 @@ def _run_planner(
     dislikes = list((pref.black_list if pref else None) or [])
     longest_day = _max_day_minutes(user)
 
+    progress.report("Checking this week's offers")
     offers = _current_offers(session, user)
     offered = {o.canonical_ingredient_id for o in offers if o.canonical_ingredient_id}
     items = _items(offers) + _pantry_items(pantry_items)
@@ -260,6 +267,7 @@ def _run_planner(
             want = CHOICE * courses[course]
             if have >= want:
                 continue
+            progress.report("Looking for more recipes that use the offers")
             wanted = refresh.PoolFilter(
                 diet=diet or "normal",
                 allergens=frozenset(excluded),
@@ -310,7 +318,7 @@ def _run_planner(
         "loop: %d round(s), critic %s",
         result.rounds, "passed" if result.critique.passed else f"still rejects: {result.critique.issues}",
     )
-    return result.plan, rows, result.critique
+    return result.plan, rows, result.critique, result.rounds
 
 
 def _labelled(session, rows: dict[str, RecipeCache], candidates: list[Recipe]) -> list[Recipe]:
@@ -323,6 +331,7 @@ def _labelled(session, rows: dict[str, RecipeCache], candidates: list[Recipe]) -
     """
     missing = [c for c in candidates if c.kind is None or c.course is None]
     if missing:
+        progress.report("Getting to know the new dishes")
         try:
             found = labels.label_dishes(missing)
         except (RuntimeError, AgentRunError) as exc:
@@ -395,7 +404,7 @@ def generate(
     body = body or GenerateRequest()
     # Tags this request's agent traces in Phoenix (a no-op when tracing is off).
     with trace_context(user.id, request="weekly", meals=body.number_of_meals):
-        plan, rows, verdict = _run_planner(session, user, body.number_of_meals)
+        plan, rows, verdict, rounds = _run_planner(session, user, body.number_of_meals)
     if not plan.recipes:
         # Every candidate used nothing on offer (planner.using_offers). An empty
         # week saved here would also use up the week's one weekly plan.
@@ -414,6 +423,8 @@ def generate(
         # Kept even when the rounds ran out without a pass: it says what is
         # still wrong with the week.
         passed=verdict.passed,
+        assessment=verdict.assessment,
+        rounds=rounds,
         issues=verdict.issues,
         suggestions=verdict.suggestions,
         recipes=chosen,
@@ -422,6 +433,7 @@ def generate(
     session.add(generation)
     session.commit()
     # The week's methods, clean before anyone opens them (app/methods.py).
+    progress.report("Writing up the methods")
     prepare_methods(session, list(generation.recipes))
     log.info(
         "weekly plan %d for user %d: %s, %.2f EUR — critic %s",
@@ -434,6 +446,24 @@ def generate(
 @router.get("/quota")
 def quota(user: CurrentUser, session: SessionDep) -> RefineQuota:
     return refine_quota(session, user)
+
+
+@router.get("/review")
+def review(user: CurrentUser, session: SessionDep) -> PlanReview | None:
+    """What the critic said about the current plan; null before the first one."""
+    generation = latest_generation(session, user)
+    if generation is None:
+        return None
+    return PlanReview(
+        kind=generation.kind,
+        model=generation.model,
+        passed=generation.passed,
+        assessment=generation.assessment,
+        issues=list(generation.issues or []) if generation.passed is False else [],
+        suggestions=list(generation.suggestions or []) if generation.passed is False else [],
+        rounds=generation.rounds,
+        created_at=generation.created_at,
+    )
 
 
 @router.post("/refine")
@@ -467,7 +497,7 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
         user.id, request="refine", mode=body.mode, count=count,
         note=body.note, pantry_items=body.pantry_items,
     ):
-        plan, rows, verdict = _run_planner(
+        plan, rows, verdict, rounds = _run_planner(
             session, user, count, exclude_ids=seen,
             pantry_items=body.pantry_items or (), note=body.note, fixed=planned,
         )
@@ -513,6 +543,8 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
         # The critic's verdict on the whole week, kept even when the rounds ran
         # out without a pass — it says what is still wrong.
         passed=verdict.passed,
+        assessment=verdict.assessment,
+        rounds=rounds,
         issues=verdict.issues,
         suggestions=verdict.suggestions,
         recipes=planned + new,
@@ -524,6 +556,7 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
     session.add(generation)
     session.commit()
     # The week's methods, clean before anyone opens them (app/methods.py).
+    progress.report("Writing up the methods")
     prepare_methods(session, list(generation.recipes))
     log.info(
         "refine %d for user %d (%s%s%s): kept %s, added %s — critic %s",
@@ -536,3 +569,61 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
     return RefineResponse(
         recipes=_recipes_out(generation, user), quota=refine_quota(session, user)
     )
+
+
+# --- planning in the background (app/jobs.py) -----------------------------------
+
+def _job_out(job: jobs.Job) -> PlanningJob:
+    result = job.result
+    recipes, quota_left = None, None
+    if isinstance(result, RefineResponse):
+        recipes, quota_left = result.recipes, result.quota
+    elif isinstance(result, list):
+        recipes = result
+    return PlanningJob(
+        id=job.id, kind=job.kind, status=job.status, steps=list(job.steps),
+        recipes=recipes, quota=quota_left, error=job.error, error_status=job.error_status,
+    )
+
+
+def _start(kind: str, user: User, session, background: BackgroundTasks, plan) -> PlanningJob:
+    """Start `plan(user, session)` as a job, or return the one already running."""
+    running = jobs.running_for(user.id)
+    if running is not None:
+        return _job_out(running)
+    job = jobs.create(user.id, kind)
+    # Its own session: the request's is closed by the time the job runs.
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    user_id = user.id
+
+    def work():
+        with factory() as job_session:
+            return plan(job_session.get(User, user_id), job_session)
+
+    background.add_task(jobs.run, job, work)
+    return _job_out(job)
+
+
+@router.post("/jobs/weekly", status_code=status.HTTP_202_ACCEPTED)
+def start_weekly(
+    user: CurrentUser, session: SessionDep, background: BackgroundTasks,
+    body: GenerateRequest | None = None,
+) -> PlanningJob:
+    """POST /generate, as a job: poll GET /generate/jobs/{id} for its steps and result."""
+    return _start("weekly", user, session, background, lambda u, s: generate(u, s, body))
+
+
+@router.post("/jobs/refine", status_code=status.HTTP_202_ACCEPTED)
+def start_refine(
+    body: RefineRequest, user: CurrentUser, session: SessionDep, background: BackgroundTasks,
+) -> PlanningJob:
+    """POST /generate/refine, as a job."""
+    return _start("refine", user, session, background, lambda u, s: refine(body, u, s))
+
+
+@router.get("/jobs/{job_id}")
+def planning_job(job_id: str, user: CurrentUser) -> PlanningJob:
+    job = jobs.get(job_id, user.id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such planning job")
+    return _job_out(job)

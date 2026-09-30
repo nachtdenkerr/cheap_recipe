@@ -38,6 +38,7 @@ from cheaprecipe.agents.planner import openrouter_model
 from cheaprecipe.calculation.pantry import is_pantry
 from cheaprecipe.calculation.schedule import build_week
 from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.observability import usage as model_usage
 
 log = logging.getLogger(__name__)
 
@@ -232,6 +233,7 @@ def critique(
     )
     review = result.output
     usage = result.usage
+    model_usage.add("critic", usage)
     # What the model said, as it said it — before code holds it to the facts.
     log.info("critic model (%d request(s), %s tokens): %s — %s",
              usage.requests, usage.total_tokens,

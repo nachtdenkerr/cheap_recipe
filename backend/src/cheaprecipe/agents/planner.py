@@ -33,12 +33,13 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from cheaprecipe.agents.contracts import Critique, Item, Plan, Quantity, Recipe
 from cheaprecipe.calculation import cost, waste
 from cheaprecipe.config import load_keys, openrouter_api_key
 from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.observability import usage as model_usage
 
 log = logging.getLogger(__name__)
 
@@ -687,13 +688,18 @@ def plan_with_agent(
         log.warning("planner agent skipped: no candidate uses %d+ offers", DEFAULT_MIN_OFFERS)
         return Plan(recipes=[], grocery_list=[], total_cost=0.0)
 
-    result = build_planner(model_name).run_sync(
-        _initial_prompt(deps),
-        deps=deps,
-        usage_limits=UsageLimits(request_limit=request_limit),
-    )
+    # Shared, so a run that fails (request limit, bad answers) still counts.
+    usage = RunUsage()
+    try:
+        result = build_planner(model_name).run_sync(
+            _initial_prompt(deps),
+            deps=deps,
+            usage=usage,
+            usage_limits=UsageLimits(request_limit=request_limit),
+        )
+    finally:
+        model_usage.add("planner", usage)
 
-    usage = result.usage
     choice = result.output
     log.info(
         "planner agent chose %s in %d request(s), %s tokens: %s",

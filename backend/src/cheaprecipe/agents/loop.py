@@ -24,6 +24,7 @@ from pydantic_ai.exceptions import AgentRunError
 from cheaprecipe.agents import critic, planner
 from cheaprecipe.agents.contracts import Critique, Item, Plan, Recipe, UserPreference
 from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.observability import progress
 from cheaprecipe.observability.decorators import traced
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def run(
 
     def review(plan: Plan, round_number: int) -> Critique:
         week = plan.model_copy(update={"recipes": [*fixed, *plan.recipes]})
+        progress.report("The critic is reviewing the week" + (f" (round {round_number})" if round_number > 1 else ""))
         verdict = critic.critique(week, user_pref, model_name=model_name, fixed=fixed_names)
         log.info(
             "round %d/%d: planned %s — critic %s%s",
@@ -95,6 +97,8 @@ def run(
     verdict: Critique | None = None
     feedback: Critique | None = None  # everything the critic said so far
     for round_number in range(1, max_rounds + 1):
+        progress.report("The planner is choosing recipes" if round_number == 1
+                        else f"The planner is revising the week (round {round_number})")
         try:
             revised = planner.plan_with_agent(
                 candidate_recipes,

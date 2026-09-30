@@ -460,3 +460,68 @@ def test_no_pork_means_no_sausage_or_bacon_either(client):
     # "Sausage and Apple Bake" has no word "pork" in it, and is still out.
     assert "Sausage and Apple Bake" not in titles
     assert titles  # the rest of the week is planned
+
+
+def test_the_critics_judgement_is_there_to_show(client, agents):
+    headers = _user(client)
+    assert client.get("/generate/review", headers=headers).json() is None  # no plan yet
+    rejected = {"passed": False, "issues": ["Too much butter."], "exchange": []}
+    agents.verdicts.extend([
+        {**rejected, "assessment": "Heavy on butter."},
+        rejected,
+        {**rejected, "assessment": "Still heavy on butter all week."},
+    ])
+    client.post("/generate", headers=headers, json=TWO_OF_THREE)
+
+    review = client.get("/generate/review", headers=headers).json()
+    assert (review["kind"], review["model"], review["passed"], review["rounds"]) == ("weekly", "agent+critic", False, 3)
+    # The verdict on the week that was served: the last round's.
+    assert review["assessment"] == "Still heavy on butter all week."
+    assert review["issues"] == ["Too much butter."]
+
+
+# --- planning as a job ------------------------------------------------------------
+
+def test_a_weekly_plan_runs_as_a_job_and_reports_its_steps(client, agents):
+    headers = _user(client)
+    started = client.post("/generate/jobs/weekly", headers=headers, json=TWO_OF_THREE)
+    assert started.status_code == 202
+    job_id = started.json()["id"]
+
+    # The test client runs the job before returning; a browser polls.
+    job = client.get(f"/generate/jobs/{job_id}", headers=headers).json()
+    assert job["status"] == "done" and job["kind"] == "weekly"
+    assert len(job["recipes"]) == 2
+    assert job["steps"][0] == "Checking this week's offers"
+    assert "The planner is choosing recipes" in job["steps"]
+    assert "The critic is reviewing the week" in job["steps"]
+    # Same as POST /generate: the plan is saved.
+    assert {r["title"] for r in client.get("/recipes", headers=headers).json()} == {
+        r["title"] for r in job["recipes"]
+    }
+
+
+def test_a_failing_job_says_what_the_request_would_have(client):
+    headers = _user(client)
+    client.post("/generate", headers=headers)  # this week's plan is made
+    job = client.post("/generate/jobs/weekly", headers=headers).json()
+    job = client.get(f"/generate/jobs/{job['id']}", headers=headers).json()
+    assert (job["status"], job["errorStatus"]) == ("failed", 409)
+    assert "already planned" in job["error"]
+
+
+def test_a_refine_job_returns_the_quota_too(client, agents):
+    headers = _user(client)
+    client.post("/generate", headers=headers, json=TWO_OF_THREE)
+    job = client.post("/generate/jobs/refine", headers=headers, json={"mode": "replace"}).json()
+    job = client.get(f"/generate/jobs/{job['id']}", headers=headers).json()
+    assert job["status"] == "done" and job["quota"]["remaining"] == 1
+
+
+def test_a_job_is_only_for_its_user(client):
+    headers = _user(client)
+    job = client.post("/generate/jobs/weekly", headers=headers).json()
+    other = client.post("/auth/signup", json={"username": "other", "email": "o@example.com",
+                                              "password": "correct horse battery"}).json()["token"]
+    assert client.get(f"/generate/jobs/{job['id']}",
+                      headers={"Authorization": f"Bearer {other}"}).status_code == 404

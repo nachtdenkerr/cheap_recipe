@@ -51,3 +51,35 @@ class RefineQuota(CamelModel):
 class RefineResponse(CamelModel):
     recipes: list[Recipe]
     quota: RefineQuota
+
+
+class PlanReview(CamelModel):
+    """The critic's verdict on the current plan — GET /generate/review."""
+
+    kind: Literal["weekly", "refine"]
+    # "agent+critic" for every plan now; older plans were "greedy", unreviewed.
+    model: str | None
+    passed: bool | None
+    # The critic's judgement of the week, in its words.
+    assessment: str | None
+    # What it still holds against the week when the rounds ran out.
+    issues: list[str]
+    suggestions: list[str]
+    rounds: int | None
+    created_at: datetime
+
+
+class PlanningJob(CamelModel):
+    """A plan being made in the background — POST /generate/jobs/…, GET /generate/jobs/{id}."""
+
+    id: str
+    kind: Literal["weekly", "refine"]
+    status: Literal["running", "done", "failed"]
+    # What planning has done so far, oldest first; the last is what it is doing.
+    steps: list[str]
+    # When done: the week's recipes, and for a refine the quota left.
+    recipes: list[Recipe] | None = None
+    quota: RefineQuota | None = None
+    # When failed: what the plain request would have answered.
+    error: str | None = None
+    error_status: int | None = None

@@ -23,6 +23,7 @@ from pydantic_ai.usage import UsageLimits
 from cheaprecipe.agents.contracts import Recipe
 from cheaprecipe.calculation.pantry import is_pantry
 from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.observability import usage as model_usage
 from cheaprecipe.vocabulary import Course
 
 log = logging.getLogger(__name__)
@@ -167,6 +168,7 @@ def label_dishes(recipes: list[Recipe], model_name: str = DEFAULT_MODEL) -> dict
     result = build_labeller(model_name).run_sync(
         "Recipes:\n" + "\n".join(lines), deps=names, usage_limits=UsageLimits(request_limit=4)
     )
+    model_usage.add("labeller", result.usage)
     log.info(
         "labelled %d recipes: %s", len(names),
         "; ".join(f"{d.name} = {d.course}, {d.kind}/{d.main_ingredient}" for d in result.output.dishes),

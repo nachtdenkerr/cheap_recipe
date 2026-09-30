@@ -26,6 +26,7 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.usage import UsageLimits
 
 from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.observability import usage as model_usage
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,7 @@ def edit_methods(methods: dict[str, str], model_name: str = DEFAULT_MODEL) -> di
         prompt, deps=MethodContext(originals=dict(methods)),
         usage_limits=UsageLimits(request_limit=4),
     )
+    model_usage.add("method editor", result.usage)
     edited = {r.name: [s.strip() for s in r.steps if s.strip()] for r in result.output.recipes}
     log.info(
         "edited the method of %d recipes (%s tokens): %s",
