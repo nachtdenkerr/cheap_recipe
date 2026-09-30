@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-ai-slim[openai]>=2.43,<3",
     "langfuse",
     "rich",
+    "alembic>=1.20.0",
 ]
 
 [project.optional-dependencies]
