@@ -24,6 +24,10 @@ dev = [
     "pytest-asyncio",
     "ruff",
 ]
+tracing = [
+    "arize-phoenix-otel>=0.17.1",
+    "openinference-instrumentation-pydantic-ai>=0.1.27",
+]
 
 [project.scripts]
 cheaprecipe = "cheaprecipe.pipeline:main"

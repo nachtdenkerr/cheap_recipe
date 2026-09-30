@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+
 from cheaprecipe.normalization import normalize, quantity
 
 
@@ -132,3 +133,21 @@ def test_unit_letter_at_the_end_of_a_word_is_not_a_unit():
         2.29,
     )
     assert out["quantity_amount"] == 100.0
+
+
+@pytest.mark.parametrize("description, price, amount, unit", [
+    ("in Eigenhaut, 6 Stück = 180g Glas, (1kg = 5,56)", 1.0, 180.0, "g"),
+    ("cremiger Weichkäse, 60% Fett i. Tr., 150g Stück, (1kg = 13,27)", 1.99, 150.0, "g"),
+    ("40 Stück = 280g Beutel, (1kg = 17,11)", 4.79, 280.0, "g"),
+    ("mit Meersalz verfeinert, 4x65g = 260g, (1kg = 3,04)", 0.79, 260.0, "g"),
+])
+def test_a_count_next_to_a_weight_is_read_as_the_weight(description, price, amount, unit):
+    out = parse(description, price)
+    assert (out["quantity_amount"], out["quantity_unit"]) == (amount, unit)
+    # Now the derived base price agrees with the printed one.
+    assert abs(out["_derived_price_per_unit"] - out["printed_price_per_unit"]) / out["printed_price_per_unit"] < 0.02
+
+
+def test_a_plain_count_stays_a_count():
+    out = parse("Größe M, 10 Stück", 2.49)
+    assert (out["quantity_amount"], out["quantity_unit"]) == (10.0, "Stück")

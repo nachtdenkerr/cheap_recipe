@@ -24,7 +24,9 @@ def make_engine(url: str | None = None, **kwargs) -> Engine:
     url = url or database_url()
     if url.startswith("sqlite"):
         # FastAPI serves requests from a thread pool; SQLite's default refuses that.
-        kwargs.setdefault("connect_args", {"check_same_thread": False})
+        # The weekly refresh writes from a background thread too: wait for its
+        # lock instead of failing with "database is locked".
+        kwargs.setdefault("connect_args", {"check_same_thread": False, "timeout": 30})
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
         # SQLite ignores ON DELETE CASCADE unless foreign keys are switched on.

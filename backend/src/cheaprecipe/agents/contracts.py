@@ -11,7 +11,15 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 # The vocabularies are shared with the offer side — see cheaprecipe.vocabulary.
-from cheaprecipe.vocabulary import CookingLevel, Cuisine, DietType, Unit
+from cheaprecipe.vocabulary import (
+    DEFAULT_MEAL_TYPES,
+    CookingLevel,
+    Course,
+    Cuisine,
+    DietType,
+    MealType,
+    Unit,
+)
 
 
 class UserPreference(BaseModel):
@@ -21,6 +29,9 @@ class UserPreference(BaseModel):
     week_time_availability: list[int] | None = None
     # Free text, e.g. "nothing spicy".
     notes: str | None = None
+    # Who eats, and which meals of the day the week covers — for the week grid.
+    household_size: int = 1
+    meal_types: list[MealType] = Field(default_factory=lambda: list(DEFAULT_MEAL_TYPES))
 
 
 class Quantity(BaseModel):
@@ -53,6 +64,12 @@ class Recipe(BaseModel):
     cooking_level: CookingLevel | None = None
     cuisine: list[Cuisine]
     total_kcal: int | None = None
+    # What the dish is (agents/labels.py): a DishKind such as "pasta", and the
+    # ingredient it is built on. None until the recipe has been labelled.
+    kind: str | None = None
+    main_ingredient: str | None = None
+    # "breakfast" or "main"; None when unknown (planned as a main).
+    course: Course | None = None
 
     # Set when the recipe came from retrieval rather than the planner, so it
     # can be reconciled with the recipe table instead of inserted twice.
@@ -68,6 +85,12 @@ class Item(BaseModel):
     price_per_unit_unit: Unit
     sale_start_date: date | None = None
     offer_id: int | None = None
+    # The plain name a recipe uses for it (classify.py's base_ingredient):
+    # "chicken breast" for marinated chicken steaks. Matched as well as `name`.
+    base: str | None = None
+    # A typical shelf price (calculation/regular_prices.py), not an offer:
+    # bought at the regular price, and its cost is an estimate.
+    estimated: bool = False
 
 
 class Plan(BaseModel):
@@ -81,6 +104,9 @@ class Critique(BaseModel):
     """The critic's verdict on a plan, fed back to the planner if it fails."""
 
     passed: bool = Field(description="True only if the plan needs no changes.")
+    assessment: str | None = Field(
+        default=None, description="The critic's judgement of the week, in its words."
+    )
     issues: list[str] = Field(
         default_factory=list, description="What is wrong with the plan, one per entry."
     )

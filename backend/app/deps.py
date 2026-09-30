@@ -2,13 +2,13 @@
 
 from typing import Annotated
 
-from cheaprecipe.db.models import User
-from cheaprecipe.db.session import get_session
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.security import read_token
+from cheaprecipe.db.models import User
+from cheaprecipe.db.session import get_session
 
 _bearer = HTTPBearer(auto_error=False)
 

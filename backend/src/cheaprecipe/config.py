@@ -37,3 +37,20 @@ def secret_key() -> str | None:
     """Signs the API's session tokens. Unset means tokens die with the process."""
     load_keys()
     return os.environ.get("SECRET_KEY")
+
+
+# Where the pipeline and the API write their log; LOG_FILE= (empty) turns it off.
+DEFAULT_LOG_FILE = Path(__file__).resolve().parents[2] / "logs" / "cheaprecipe.log"
+
+
+def log_level() -> str:
+    load_keys()
+    return os.environ.get("LOG_LEVEL", "INFO").upper()
+
+
+def log_file() -> Path | None:
+    load_keys()
+    configured = os.environ.get("LOG_FILE")
+    if configured is None:
+        return DEFAULT_LOG_FILE
+    return Path(configured) if configured.strip() else None

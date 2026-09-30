@@ -138,6 +138,17 @@ def parse_description(description: str | None, price: float | None = None) -> di
     if not match and not mixed:
         return {**empty, "deposit": sum(deposits) if deposits else None}
 
+    # A count next to a weight — "6 Stück = 180g Glas", "150g Stück",
+    # "4x65g = 260g" — is read as the weight: it is what the pack holds, and
+    # what the printed base price is per. The last weight is the total.
+    if not mixed and (match.group("unit") or match.group("bare_unit") or "").lower() not in TO_BASE:
+        weights = [
+            m for m in QUANTITY_RE.finditer(text)
+            if (m.group("unit") or "").lower() in TO_BASE and m.group("low")
+        ]
+        if weights:
+            match = weights[-1]
+
     if mixed:
         # Conservative end of the range, same convention as a same-unit range.
         unit = _canonical_unit(mixed.group("low_unit"))

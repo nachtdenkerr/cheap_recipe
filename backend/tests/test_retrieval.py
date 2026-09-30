@@ -5,6 +5,7 @@ than on Spoonacular's data.
 """
 
 import pytest
+
 from cheaprecipe.matching import retrieval
 
 
@@ -138,3 +139,9 @@ def test_with_information_makes_one_bulk_call_and_keeps_the_search_fields(monkey
 def test_with_information_of_nothing_makes_no_call(monkeypatch):
     monkeypatch.setattr(retrieval.requests, "get", lambda *a, **k: pytest.fail("called"))
     assert retrieval.with_information([], api_key="k") == []
+
+
+def test_the_method_is_asked_for(sent):
+    # addRecipeInformation alone brings timings and servings but no steps.
+    retrieval.complex_search(["avocado"], api_key="k")
+    assert sent["params"]["addRecipeInstructions"] is True

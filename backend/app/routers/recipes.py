@@ -1,12 +1,17 @@
 """Recipe endpoints: browse the latest suggestions, heart them, plan them."""
 
-from cheaprecipe.db.models import Generation, RecipeCache, User, UserPreference
+import logging
+
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, SessionDep
+from app.methods import prepare_methods
 from app.presenters import favourite_ids, latest_generation, recipe_out
 from app.schemas.recipes import Recipe
+from cheaprecipe.db.models import Generation, RecipeCache, User, UserPreference
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -51,6 +56,7 @@ def list_recipes(user: CurrentUser, session: SessionDep) -> list[Recipe]:
     generation = latest_generation(session, user)
     if generation is None:
         return []
+    prepare_methods(session, list(generation.recipes))
     favourites = favourite_ids(user)
     return [recipe_out(recipe, generation, favourites) for recipe in generation.recipes]
 
@@ -59,6 +65,7 @@ def list_recipes(user: CurrentUser, session: SessionDep) -> list[Recipe]:
 def get_recipe(recipe_id: int, user: CurrentUser, session: SessionDep) -> Recipe:
     """One recipe, costed against the newest of the user's plans that has it."""
     recipe, generation = _visible(session, user, recipe_id)
+    prepare_methods(session, [recipe])
     return recipe_out(recipe, generation, favourite_ids(user))
 
 

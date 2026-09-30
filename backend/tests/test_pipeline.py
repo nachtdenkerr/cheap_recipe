@@ -61,3 +61,10 @@ def test_an_empty_result_leaves_the_last_recipes_alone(tmp_path, monkeypatch):
     kept, written, _ = _run(tmp_path, monkeypatch, cuisine=["Thai"], returned=[])
     assert kept == []
     assert written == [{"id": 99, "title": "previous run"}]
+
+
+def test_each_branch_has_its_own_files():
+    # The default branch keeps the plain names; another one cannot overwrite them.
+    assert pipeline.classified_offers_csv("edeka", "10001604") == "edeka_offers_classified.csv"
+    assert pipeline.raw_offers_csv("edeka", "8003153") == "edeka_8003153_offers_raw.csv"
+    assert pipeline.classified_offers_csv("aldi", "1588161426582123") == "aldi_offers_classified.csv"

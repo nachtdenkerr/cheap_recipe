@@ -1,8 +1,9 @@
 """The weekly limit on follow-up recipe requests.
 
-Every refine can spend LLM tokens and Spoonacular points, so each user gets
-REFINES_PER_WEEK of them per calendar week, Monday to Sunday in German time.
-The week's first plan (kind "weekly") is free.
+Every plan runs the planner agent and the critic (LLM tokens) and may search
+Spoonacular, so each user gets one weekly plan (kind "weekly") and
+REFINES_PER_WEEK follow-up requests per calendar week, Monday to Sunday in
+German time.
 
 Only successful requests count: the Generation row is written after the
 planner returns, so a failed run leaves nothing to count.
@@ -11,11 +12,11 @@ planner returns, so a failed run leaves nothing to count.
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from cheaprecipe.db.models import Generation, User
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.schemas.generate import RefineQuota
+from cheaprecipe.db.models import Generation, User
 
 REFINES_PER_WEEK = 2
 

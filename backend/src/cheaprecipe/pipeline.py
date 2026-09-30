@@ -20,6 +20,8 @@ EDEKA run and an ALDI run never overwrite each other:
     uv run cheaprecipe offers --skip-llm      # deterministic steps only
     uv run cheaprecipe recipes --diet vegetarian --use cooking
     uv run cheaprecipe recipes --store aldi --cuisine Thai
+    uv run cheaprecipe load                   # both files -> the API's database
+    uv run cheaprecipe weekly                 # all of it, as the API does on Mondays
 """
 
 from __future__ import annotations
@@ -43,19 +45,30 @@ log = logging.getLogger(__name__)
 
 
 
-def raw_offers_csv(store: vocabulary.Store) -> str:
+def _prefix(store: vocabulary.Store, store_id: str | None) -> str:
+    """The files' prefix: the chain, and the branch unless it is the default one.
+
+    Every branch a user shops at gets its offers fetched (refresh.py), and
+    one file per chain would let the last branch fetched overwrite the one
+    `cheaprecipe load` means.
+    """
+    default = edeka.DEFAULT_MARKET_ID if store == "edeka" else aldi.DEFAULT_CATEGORY_ID
+    return store if store_id in (None, default) else f"{store}_{store_id}"
+
+
+def raw_offers_csv(store: vocabulary.Store, store_id: str | None = None) -> str:
     """Offers as fetched, before any cleaning."""
-    return f"{store}_offers_raw.csv"
+    return f"{_prefix(store, store_id)}_offers_raw.csv"
 
 
-def translated_offers_csv(store: vocabulary.Store) -> str:
+def translated_offers_csv(store: vocabulary.Store, store_id: str | None = None) -> str:
     """Cleaned offers with their English ingredient name."""
-    return f"{store}_offers_translated.csv"
+    return f"{_prefix(store, store_id)}_offers_translated.csv"
 
 
-def classified_offers_csv(store: vocabulary.Store) -> str:
+def classified_offers_csv(store: vocabulary.Store, store_id: str | None = None) -> str:
     """Translated offers with the cooking/baking/drinks flags — the input to recipes."""
-    return f"{store}_offers_classified.csv"
+    return f"{_prefix(store, store_id)}_offers_classified.csv"
 
 
 def recipes_json(store: vocabulary.Store) -> str:
@@ -106,7 +119,7 @@ def build_offers(
 
     with stage("fetch_offers", log, store=store, store_id=store_id):
         df = _fetch_offers(store, store_id)
-        _checkpoint(df, out_dir / raw_offers_csv(store))
+        _checkpoint(df, out_dir / raw_offers_csv(store, store_id))
 
     with stage("clean_offers", log, store=store):
         df = normalize.clean_offers(df, store)
@@ -117,11 +130,11 @@ def build_offers(
 
     with stage("translate_ingredients", log):
         df = ingredients.add_ingredient_column(df, col_name="title")
-        _checkpoint(df, out_dir / translated_offers_csv(store))
+        _checkpoint(df, out_dir / translated_offers_csv(store, store_id))
 
     with stage("classify_ingredients", log):
         df = classify.add_classification_columns(df)
-        _checkpoint(df, out_dir / classified_offers_csv(store))
+        _checkpoint(df, out_dir / classified_offers_csv(store, store_id))
 
     return df
 
@@ -185,6 +198,66 @@ def build_recipes(
     return recipes
 
 
+def load(
+    store: vocabulary.Store = "edeka",
+    store_id: str | None = None,
+    offers_path: Path | None = None,
+    recipes_path: Path | None = None,
+    database_url: str | None = None,
+) -> None:
+    """Load a store's classified offers and recipes into the API's database.
+
+    The database is DATABASE_URL, or data/cheaprecipe.db by default — the one
+    `uvicorn app.main:app` serves. Safe to re-run; see db/load.py.
+    """
+    # Imported here so the offers/recipes commands never touch the database.
+    from sqlalchemy.orm import Session
+
+    from cheaprecipe.db.load import load_files
+    from cheaprecipe.db.session import init_db, make_engine
+
+    store_id = store_id or (
+        edeka.DEFAULT_MARKET_ID if store == "edeka" else aldi.DEFAULT_CATEGORY_ID
+    )
+    offers_path = Path(offers_path or DATA_DIR / classified_offers_csv(store, store_id))
+    recipes_path = Path(recipes_path or DATA_DIR / recipes_json(store))
+    engine = make_engine(database_url)
+
+    with stage("load_database", log, store=store, store_id=store_id, db=str(engine.url)):
+        if not offers_path.exists():
+            raise FileNotFoundError(
+                f"{offers_path} does not exist — run `cheaprecipe offers --store {store}` first."
+            )
+        init_db(engine)
+        with Session(engine) as session:
+            report = load_files(session, offers_path, recipes_path, store, store_id)
+        log.info("%s", report)
+
+
+def weekly(store: vocabulary.Store = "edeka", force: bool = False, database_url: str | None = None):
+    """This week's offers and a recipe pool for every diet in use, into the database.
+
+    What the API's scheduler runs on Mondays (app/scheduler.py), for running
+    it by hand or from a cron: every branch some user has as a home market,
+    or `store`'s default branch when nobody has one yet. Skips what is
+    already current unless --force.
+    """
+    from sqlalchemy.orm import Session
+
+    from cheaprecipe.db.load import chain_of
+    from cheaprecipe.db.session import init_db, make_engine
+    from cheaprecipe.refresh import markets_in_use, weekly_refresh
+
+    engine = make_engine(database_url)
+    with stage("weekly_refresh", log, store=store, force=force, db=str(engine.url)):
+        init_db(engine)
+        with Session(engine) as session:
+            branches = [(chain_of(b), b.market_id) for b in markets_in_use(session)] or [(store, None)]
+            for chain, market_id in branches:
+                summary = weekly_refresh(session, chain, market_id, force=force)
+                log.info("%s:%s %s", chain, market_id, summary.as_dict())
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cheaprecipe", description=__doc__)
     parser.add_argument(
@@ -214,6 +287,33 @@ def _parser() -> argparse.ArgumentParser:
         "--skip-llm",
         action="store_true",
         help="stop after the deterministic cleaning step",
+    )
+
+    loader = subparsers.add_parser(
+        "load", help="load classified offers and recipes into the API's database"
+    )
+    loader.add_argument("--store", default="edeka", choices=vocabulary.STORES)
+    loader.add_argument(
+        "--store-id",
+        help="the branch the offers are from (default: the one `offers` fetches)",
+    )
+    loader.add_argument(
+        "--offers", type=Path, help="default: data/<store>_offers_classified.csv"
+    )
+    loader.add_argument("--recipes", type=Path, help="default: data/<store>_recipes.json")
+    loader.add_argument(
+        "--database-url", help="default: DATABASE_URL, else data/cheaprecipe.db"
+    )
+
+    weekly_parser = subparsers.add_parser(
+        "weekly", help="refresh offers and the recipe pool for every diet in use"
+    )
+    weekly_parser.add_argument("--store", default="edeka", choices=vocabulary.STORES)
+    weekly_parser.add_argument(
+        "--force", action="store_true", help="refetch offers even if this week's are loaded"
+    )
+    weekly_parser.add_argument(
+        "--database-url", help="default: DATABASE_URL, else data/cheaprecipe.db"
     )
 
     recipes = subparsers.add_parser("recipes", help="retrieve recipes for the offers")
@@ -248,7 +348,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    setup_logging("DEBUG" if args.verbose else "INFO")
+    setup_logging("DEBUG" if args.verbose else None)  # else LOG_LEVEL, default INFO
 
     try:
         if args.command == "offers":
@@ -257,6 +357,16 @@ def main(argv: list[str] | None = None) -> int:
                 store=args.store,
                 store_id=args.store_id,
                 skip_llm=args.skip_llm,
+            )
+        elif args.command == "weekly":
+            weekly(store=args.store, force=args.force, database_url=args.database_url)
+        elif args.command == "load":
+            load(
+                store=args.store,
+                store_id=args.store_id,
+                offers_path=args.offers,
+                recipes_path=args.recipes,
+                database_url=args.database_url,
             )
         else:
             build_recipes(

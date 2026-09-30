@@ -29,21 +29,17 @@ from cheaprecipe.calculation import cost
 from cheaprecipe.config import DATA_DIR
 from cheaprecipe.matching.index import parse_recipe_json
 from cheaprecipe.matching.offers import match_offer
+from cheaprecipe.observability.tracing import setup_tracing
 from cheaprecipe.pipeline import classified_offers_csv, recipes_json
 from cheaprecipe.vocabulary import STORES
-
-# Offer units -> (contracts.Unit, factor), as app/routers/generate.py maps them.
-_UNITS = {"g": ("g", 1.0), "kg": ("kg", 1.0), "l": ("l", 1.0), "ml": ("l", 0.001),
-          "Stück": ("Stück", 1.0)}
-
 
 def load_offers(path: Path) -> tuple[list[Item], int]:
     """Cookable offers the planner can price; also how many were left out."""
     frame = pd.read_csv(path)
     items, skipped = [], 0
     for position, row in enumerate(frame.itertuples(index=False)):
-        unit = _UNITS.get(row.quantity_unit)
-        ppu_unit = _UNITS.get(row.price_per_unit_unit)
+        unit = cost.unit_of(row.quantity_unit)
+        ppu_unit = cost.unit_of(row.price_per_unit_unit)
         usable = (
             row.can_cook is True
             and unit is not None
@@ -83,11 +79,28 @@ def plan_report(title: str, plan, recipes: list[Recipe], offers: list[Item], pre
         costing = cost.compute(recipe, offers)
         print(
             f"  - {recipe.name} ({critic.total_minutes(recipe)} min, serves {recipe.servings}): "
-            f"{costing.total:.2f} EUR on its own; unpriced: {', '.join(costing.unpriced) or '-'}"
+            f"{costing.total:.2f} EUR on its own"
         )
-    print(f"  Total for the week: {plan.total_cost or 0:.2f} EUR")
-    for line in plan.grocery_list:
-        print(f"    buy {line.quantity.amount:g} {line.quantity.unit} {line.name}: {line.price:.2f} EUR")
+        if costing.estimated:
+            print(f"      estimated at regular price: {', '.join(costing.estimated)}")
+        if costing.unpriced:
+            print(f"      no price at all: {', '.join(costing.unpriced)}")
+    basket = planner.Basket.from_offers(offers)
+    for recipe in plan.recipes:
+        basket.commit(recipe)
+    on_offer = sum(line.price for line in plan.grocery_list if not line.estimated)
+    estimated = sum(line.price for line in plan.grocery_list if line.estimated)
+    print(
+        f"  Basket for the week: ≈ {plan.total_cost or 0:.2f} EUR "
+        f"({on_offer:.2f} on offer + ≈ {estimated:.2f} at regular prices), "
+        f"{basket.leftover_value:.2f} EUR left over in opened packs"
+    )
+    for line in sorted(plan.grocery_list, key=lambda item: item.estimated):
+        mark = "≈" if line.estimated else " "
+        print(
+            f"    {mark} buy {line.quantity.amount:g} {line.quantity.unit} {line.name}: "
+            f"{line.price:.2f} EUR{'  (regular price)' if line.estimated else ''}"
+        )
     conflicts = critic.time_conflicts(plan, pref.week_time_availability)
     if pref.week_time_availability:
         print(f"  Does not fit the week: {', '.join(conflicts) or 'nothing'}")
@@ -105,11 +118,18 @@ def main() -> int:
         "--week", help="minutes per day, Monday first, e.g. 30,30,45,30,60,90,60"
     )
     parser.add_argument("--notes", help='free text for the agents, e.g. "nothing spicy"')
+    parser.add_argument("--objective", choices=["cost", "waste"], default=planner.DEFAULT_OBJECTIVE)
+    parser.add_argument(
+        "--min-offers", type=int, default=planner.DEFAULT_MIN_OFFERS,
+        help="ingredient lines a recipe needs on offer to be planned",
+    )
     parser.add_argument("--llm", action="store_true", help="run the planner agent + critic loop")
     parser.add_argument("--rounds", type=int, default=loop.MAX_ROUNDS)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.llm else logging.WARNING, format="%(message)s")
+    if args.llm and setup_tracing():
+        print("Tracing to Phoenix — open http://localhost:6006 to follow the agents.")
 
     recipes_path = args.recipes or DATA_DIR / recipes_json(args.store)
     offers_path = args.offers or DATA_DIR / classified_offers_csv(args.store)
@@ -121,11 +141,27 @@ def main() -> int:
 
     matching_report(recipes, offers)
 
+    print(f"\nCandidates: {len(recipes)} meals parsed")
     if week:
         # What POST /generate does before planning: nothing longer than the freest day.
         recipes = [r for r in recipes if critic.total_minutes(r) <= max(week)]
-    greedy = planner.plan(recipes, offers, args.meals)
-    plan_report("Greedy plan (free, deterministic):", greedy, recipes, offers, pref)
+        print(f"  {len(recipes)} fit the freest day ({max(week)} min)")
+    counts = {id(r): cost.offer_lines(r, offers) for r in recipes}
+    for minimum in (1, 2, 3, 4):
+        left = sum(1 for n in counts.values() if n >= minimum)
+        print(f"  {left:2} have {minimum}+ ingredients on offer")
+    using = planner.using_offers(recipes, offers, args.min_offers)
+    print(f"  -> planning from the {len(using)} with {args.min_offers}+:")
+    for recipe in sorted(using, key=lambda r: -counts[id(r)]):
+        shopping = len(recipe.ingredients) - len(cost.needs(recipe, offers).pantry)
+        print(f"    {counts[id(recipe)]:2}/{shopping:2} of the shopping on offer  {recipe.name[:60]}")
+    greedy = planner.plan(
+        recipes, offers, args.meals, objective=args.objective, min_offers=args.min_offers
+    )
+    plan_report(
+        f"Greedy plan ({args.objective} first, free, deterministic):",
+        greedy, recipes, offers, pref,
+    )
 
     if args.llm:
         result = loop.run(recipes, offers, args.meals, pref, max_rounds=args.rounds)

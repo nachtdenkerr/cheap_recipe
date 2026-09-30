@@ -87,6 +87,24 @@ def is_meal(recipe: dict) -> bool:
     return not dish_types or bool(dish_types & MEAL_DISH_TYPES)
 
 
+BREAKFAST_DISH_TYPES = frozenset({"breakfast", "brunch", "morning meal"})
+MAIN_DISH_TYPES = frozenset({"main course", "main dish", "dinner", "lunch", "soup"})
+
+
+def course_of(recipe: dict) -> str | None:
+    """"breakfast" or "main" from Spoonacular's dishTypes; None when it has none.
+
+    A dish tagged both ways ("brunch" and "main course") is a main: that is
+    what it is cooked as more often.
+    """
+    dish_types = {d.lower() for d in recipe.get("dishTypes") or ()}
+    if not dish_types:
+        return None
+    if dish_types & BREAKFAST_DISH_TYPES and not dish_types & MAIN_DISH_TYPES:
+        return "breakfast"
+    return "main"
+
+
 def recipe_times(recipe: dict) -> tuple[int | None, int]:
     """(preparation, cooking) minutes.
 

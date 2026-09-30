@@ -1,6 +1,10 @@
 """Critic and the planner -> critic loop — no network, no API key."""
 
 import pytest
+from pydantic_ai import models
+from pydantic_ai.messages import ModelResponse, ToolCallPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
 from cheaprecipe.agents import critic, loop, planner
 from cheaprecipe.agents.contracts import (
     Critique,
@@ -12,9 +16,6 @@ from cheaprecipe.agents.contracts import (
 )
 from cheaprecipe.agents.planner import PlanningContext, _initial_prompt
 from cheaprecipe.llm import DEFAULT_MODEL
-from pydantic_ai import models
-from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
 @pytest.fixture(autouse=True)
@@ -49,14 +50,27 @@ def critic_agent(monkeypatch):
     return critic.build_critic(DEFAULT_MODEL)
 
 
+def neutral_labels(messages) -> list[dict]:
+    """A label for every dish in the prompt's plan that never counts as a repeat."""
+    prompt = next(p.content for m in messages for p in m.parts if isinstance(p, UserPromptPart))
+    names = [line[2:].split(" — ")[0].replace(" (chosen by the user", "")
+             for line in prompt.splitlines() if line.startswith("- ")]
+    return [{"name": name, "kind": "other", "main_ingredient": name} for name in names]
+
+
 def answering(*answers, seen=None):
-    """A model that returns these Critique dicts in turn, recording its prompts."""
+    """A model that returns these Review dicts in turn, recording its prompts.
+
+    An answer without `dishes` gets neutral labels (critic.Review needs them).
+    """
     answers = list(answers)
 
     def respond(messages, info: AgentInfo) -> ModelResponse:
         if seen is not None:
             seen.append(messages)
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, answers.pop(0))])
+        answer = dict(answers.pop(0))
+        answer.setdefault("dishes", neutral_labels(messages))
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, answer)])
 
     return FunctionModel(respond)
 
@@ -159,7 +173,7 @@ def test_the_planner_prompt_carries_the_critique():
     )
     prompt = _initial_prompt(deps)
     assert "Previous plan: Beef stew, Tomato pasta, Quick salad" in prompt
-    assert "Replace: Tomato pasta" in prompt and "exclude=['Tomato pasta']" in prompt
+    assert "Rejected, do not choose: Tomato pasta" in prompt and "exclude=['Tomato pasta']" in prompt
     assert "Issue: Two pasta dishes." in prompt
     assert "Suggestion: Add a soup." in prompt
 
@@ -172,7 +186,13 @@ def test_a_first_round_prompt_has_no_feedback():
 # --- the loop -------------------------------------------------------------------
 
 @pytest.fixture
-def scripted(monkeypatch):
+def all_on_offer(monkeypatch):
+    """Every candidate counts as using the offers: these tests are about the loop."""
+    monkeypatch.setattr(planner, "using_offers", lambda recipes, offers, minimum=3: list(recipes))
+
+
+@pytest.fixture
+def scripted(monkeypatch, all_on_offer):
     """Planner and critic stand-ins: record planner calls, answer from a script."""
     calls = []
     verdicts = []
@@ -200,7 +220,7 @@ def test_the_loop_feeds_a_rejection_back_and_stops_on_a_pass(scripted):
     assert calls[0]["notes"] == "quick"
 
 
-def test_the_loop_reviews_the_whole_week_but_plans_only_the_new(monkeypatch):
+def test_the_loop_reviews_the_whole_week_but_plans_only_the_new(monkeypatch, all_on_offer):
     reviewed = []
 
     def fake_critique(plan, pref, fixed=frozenset(), **kwargs):
@@ -212,7 +232,7 @@ def test_the_loop_reviews_the_whole_week_but_plans_only_the_new(monkeypatch):
     )
     monkeypatch.setattr(critic, "critique", fake_critique)
 
-    result = loop.run([SALAD], [], 1, fixed=[STEW])
+    result = loop.run([SALAD, PASTA], [], 1, fixed=[STEW])
 
     assert reviewed == [(["Beef stew", "Quick salad"], frozenset({"Beef stew"}))]
     assert [r.name for r in result.plan.recipes] == ["Quick salad"]
@@ -222,8 +242,147 @@ def test_the_loop_returns_the_last_plan_when_rounds_run_out(scripted):
     _, verdicts = scripted
     verdicts.extend([Critique(passed=False, issues=[f"round {i}"]) for i in range(1, 4)])
 
-    result = loop.run([STEW], [], 1, max_rounds=3)
+    result = loop.run([STEW, PASTA], [], 1, max_rounds=3)
 
     assert result.rounds == 3
     assert result.critique.issues == ["round 3"]
     assert result.plan.recipes == [STEW]
+
+
+def test_the_loop_does_not_ask_the_critic_about_an_empty_plan(monkeypatch, all_on_offer):
+    monkeypatch.setattr(
+        planner, "plan_with_agent", lambda recipes, offers, n, **kw: Plan(recipes=[], grocery_list=[])
+    )
+    monkeypatch.setattr(critic, "critique", lambda *a, **k: pytest.fail("critic asked"))
+    result = loop.run([STEW, PASTA, SALAD], [], 2)
+    assert result.plan.recipes == [] and result.critique.passed is False
+    assert result.rounds == 1
+
+
+def test_the_llm_planner_is_not_called_without_candidates(monkeypatch):
+    monkeypatch.setattr(planner, "build_planner", lambda *a, **k: pytest.fail("model built"))
+    plan = planner.plan_with_agent([STEW], [], 2)  # no offers: nothing passes the filter
+    assert plan.recipes == []
+
+
+def test_a_failed_revision_keeps_the_last_plan_and_its_issues(monkeypatch, all_on_offer):
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    rounds = []
+
+    def planner_that_fails_to_revise(recipes, offers, n, **kwargs):
+        rounds.append(kwargs)
+        if kwargs["feedback"] is not None:
+            raise UnexpectedModelBehavior("Exceeded maximum output retries (2)")
+        return Plan(recipes=[STEW], grocery_list=[])
+
+    rejection = Critique(passed=False, issues=["dull"], exchange=["Beef stew"])
+    monkeypatch.setattr(planner, "plan_with_agent", planner_that_fails_to_revise)
+    monkeypatch.setattr(critic, "critique", lambda plan, pref, **kw: rejection)
+
+    result = loop.run([STEW, PASTA], [], 1)
+    # The week is served — not a 503 — with what the critic still holds against it.
+    assert [r.name for r in result.plan.recipes] == ["Beef stew"]
+    assert result.critique is rejection and result.rounds == 1
+
+
+def test_a_first_round_failure_is_still_an_error(monkeypatch, all_on_offer):
+    def down(*args, **kwargs):
+        raise RuntimeError("OPENROUTER_API_KEY is not set")
+
+    monkeypatch.setattr(planner, "plan_with_agent", down)
+    with pytest.raises(RuntimeError):
+        loop.run([STEW, PASTA], [], 1)
+
+
+def test_the_feedback_adds_up_over_the_rounds(scripted):
+    calls, verdicts = scripted
+    verdicts.extend([
+        Critique(passed=False, issues=["three pasta dishes"], exchange=["Beef stew"]),
+        Critique(passed=False, issues=["onion everywhere"], exchange=["Tomato pasta"]),
+        Critique(passed=True),
+    ])
+    loop.run([STEW, PASTA, SALAD], [], 1)
+    # Round 3 is told everything: both issues, and both rejected recipes.
+    third = calls[2]["feedback"]
+    assert third.issues == ["three pasta dishes", "onion everywhere"]
+    assert third.exchange == ["Beef stew", "Tomato pasta"]
+
+
+
+# --- variety, counted from the critic's labels ------------------------------------------
+
+def _labels(*triples):
+    return [critic.DishLabel(name=n, kind=k, main_ingredient=m) for n, k, m in triples]
+
+
+def test_three_pastas_keep_one_and_exchange_the_others():
+    dishes = _labels(
+        ("Garlic pasta", "pasta", "cauliflower"),
+        ("Red wine spaghetti", "pasta", "mushroom"),
+        ("Tart", "pizza_or_tart", "beetroot"),
+        ("Orecchiette", "pasta", "sausage"),
+    )
+    order = ["Garlic pasta", "Red wine spaghetti", "Tart", "Orecchiette"]
+    issues, suggestions, exchange = critic.variety_problems(dishes, order)
+    assert exchange == ["Red wine spaghetti", "Orecchiette"]  # the first in plan order stays
+    assert issues == ["3 pasta dishes in one week (Garlic pasta, Red wine spaghetti, Orecchiette); at most 1."]
+    assert "pasta" in suggestions[0]
+
+
+def test_two_dishes_on_one_main_ingredient_are_fine_three_are_not():
+    two = _labels(("Couscous bowl", "grain", "chicken"), ("Shawarma", "tacos_or_wraps", "chicken"))
+    assert critic.variety_problems(two, [d.name for d in two]) == ([], [], [])
+    three = two + _labels(("Shrimp boil", "soup_or_stew", "Shrimps"), ("Paella", "rice", "shrimp"),
+                          ("Shrimp salad", "salad", "shrimp"))
+    issues, _, exchange = critic.variety_problems(three, [d.name for d in three])
+    assert exchange == ["Shrimp salad"] and "3 dishes built on shrimp" in issues[0]
+
+
+def test_the_users_own_choice_is_the_one_kept():
+    dishes = _labels(("Paella A", "rice", "chicken"), ("Paella B", "rice", "seafood"))
+    _, _, exchange = critic.variety_problems(dishes, ["Paella A", "Paella B"], frozenset({"Paella B"}))
+    assert exchange == ["Paella A"]
+
+
+def test_a_repetition_fails_the_plan_even_if_the_model_passed_it(critic_agent):
+    labels = [
+        {"name": "Beef stew", "kind": "soup_or_stew", "main_ingredient": "beef"},
+        {"name": "Tomato pasta", "kind": "pasta", "main_ingredient": "tomato"},
+        {"name": "Quick salad", "kind": "pasta", "main_ingredient": "lettuce"},
+    ]
+    with critic_agent.override(model=answering({"passed": True, "dishes": labels})):
+        verdict = critic.critique(PLAN)
+    assert verdict.passed is False and verdict.exchange == ["Quick salad"]
+
+
+def test_every_dish_must_be_labelled(critic_agent):
+    seen = []
+    partial = {"passed": True, "dishes": [{"name": "Beef stew", "kind": "soup_or_stew", "main_ingredient": "beef"}]}
+    with critic_agent.override(model=answering(partial, {"passed": True}, seen=seen)):
+        assert critic.critique(PLAN).passed is True
+    assert "must label every recipe" in str(seen[1])
+
+
+def test_the_critics_own_judgement_is_logged_apart_from_what_code_adds(critic_agent, caplog):
+    labels = [
+        {"name": "Beef stew", "kind": "soup_or_stew", "main_ingredient": "beef"},
+        {"name": "Tomato pasta", "kind": "pasta", "main_ingredient": "tomato"},
+        {"name": "Quick salad", "kind": "pasta", "main_ingredient": "lettuce"},
+    ]
+    answer = {"passed": True, "dishes": labels,
+              "assessment": "A hearty stew balanced by two light dishes."}
+    with caplog.at_level("INFO"), critic_agent.override(model=answering(answer)):
+        verdict = critic.critique(PLAN)
+
+    log = caplog.text
+    assert "critic model (1 request(s)" in log and "passes the week" in log
+    assert "A hearty stew balanced by two light dishes." in log
+    assert "variety (counted in code): 2 pasta dishes" in log
+    assert verdict.assessment == "A hearty stew balanced by two light dishes." and not verdict.passed
+
+
+def test_the_assessment_reaches_the_planner():
+    feedback = Critique(passed=False, assessment="Too much pasta, nothing light.", issues=["x"])
+    deps = PlanningContext(recipes=[STEW], offers=[], number_of_meals=1, feedback=feedback)
+    assert "The critic's assessment: Too much pasta, nothing light." in _initial_prompt(deps)

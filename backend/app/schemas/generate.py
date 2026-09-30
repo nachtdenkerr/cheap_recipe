@@ -29,7 +29,7 @@ class RefineRequest(CamelModel):
     # How many new recipes; defaults to the number of unplanned ones (min 1).
     count: int | None = Field(default=None, ge=1, le=5)
     pantry_items: IngredientList = None
-    # Free text for the LLM planner ("nothing spicy"). Only this spends tokens.
+    # Free text for the planner agent and the critic ("nothing spicy").
     note: Annotated[str | None, Field(default=None, max_length=300), AfterValidator(_blank_to_none)] = None
 
     @model_validator(mode="after")

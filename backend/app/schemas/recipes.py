@@ -1,10 +1,10 @@
 """Request/response models for /recipes — mirrors `Recipe` in types.ts."""
 
 from datetime import date
-
-from cheaprecipe.vocabulary import CommonDiet, DietType
+from typing import Literal
 
 from app.schemas import CamelModel
+from cheaprecipe.vocabulary import CommonDiet, DietType
 
 
 class Offer(CamelModel):
@@ -13,6 +13,8 @@ class Offer(CamelModel):
     title: str
     ingredient_en: str | None = None
     category: str | None = None
+    # The branch it is on offer at ("EDEKA Frank"), for users with several.
+    market: str | None = None
     price_cents: int
     valid_from: date | None = None
     valid_till: date | None = None
@@ -25,8 +27,12 @@ class RecipeIngredient(CamelModel):
     # Human-readable, e.g. "400 g".
     amount: str
     offer: Offer | None = None
-    # True when no offer in the plan covers it — assumed to be at home.
+    # A staple assumed at home (calculation/pantry.py). A line that is neither
+    # on offer nor pantry is bought at the regular price.
     pantry: bool = False
+    # For a line bought at the regular price: the estimated shelf price of the
+    # pack it comes in (calculation/regular_prices.py). None when not known.
+    regular_price_cents: int | None = None
 
 
 class Nutrition(CamelModel):
@@ -42,6 +48,12 @@ class RecipeCost(CamelModel):
     total_cents: int
     per_serving_cents: int
     leftover_cents: int
+    # The part of total_cents that is an estimate at regular prices: when
+    # above 0 the cost is shown as "≈ ...".
+    estimated_cents: int
+    # Lines to buy with no price at all, not even an estimate: when above 0,
+    # the totals are a floor, shown as "from ...".
+    unpriced_count: int
 
 
 class Recipe(CamelModel):
@@ -61,3 +73,5 @@ class Recipe(CamelModel):
     is_favourite: bool
     # Chosen for this week — only these recipes fill the shopping list.
     in_meal_plan: bool
+    # Eaten as a breakfast, or at lunch and dinner.
+    course: Literal["breakfast", "main"] = "main"

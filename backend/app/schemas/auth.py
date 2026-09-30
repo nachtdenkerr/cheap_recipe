@@ -2,10 +2,11 @@
 
 from typing import Annotated
 
-from cheaprecipe.vocabulary import Allergen, CommonDiet, Cuisine
 from pydantic import AfterValidator, Field
 
 from app.schemas import CamelModel
+from app.schemas.markets import Market
+from cheaprecipe.vocabulary import MEAL_TYPES, Allergen, CommonDiet, Cuisine, MealType
 
 # A shape check only; whether the address exists is not the API's to decide.
 Email = Annotated[
@@ -27,6 +28,9 @@ class LoginRequest(CamelModel):
     password: str
 
 
+MAX_HOME_MARKETS = 3
+
+
 class User(CamelModel):
     name: str
     email: str
@@ -34,7 +38,8 @@ class User(CamelModel):
     household_size: int
     weekly_budget_cents: int | None
     allergens: list[Allergen]
-    market: str | None
+    # Where the user shops; planning needs at least one.
+    home_markets: list[Market]
     cuisines: list[Cuisine]
     # Ingredients to favour, and ones not allergic to but disliked.
     white_list: list[str]
@@ -44,6 +49,8 @@ class User(CamelModel):
     gender: str | None
     # Minutes free for cooking each day, Monday first; null until set.
     week_time_availability: list[int] | None
+    # Which meals of the day the week plan covers.
+    meal_types: list[MealType]
 
 
 class AuthSession(CamelModel):
@@ -91,5 +98,11 @@ class PreferencesUpdate(CamelModel):
     gender: str | None = Field(default=None, max_length=30)
     # One entry per day, Monday first; null clears it.
     week_time_availability: WeekTime = None
-    # A supermarket chain name, e.g. "EDEKA".
-    market: str | None = None
+    # At least one; kept in the day's order (breakfast, lunch, dinner).
+    meal_types: Annotated[
+        list[MealType] | None, Field(default=None, min_length=1),
+        AfterValidator(lambda meals: None if meals is None else [m for m in MEAL_TYPES if m in meals]),
+    ] = None
+    # The branches the user shops at, by the ids /markets returned; [] clears.
+    # Few people shop at more than a couple of supermarkets a week.
+    home_market_ids: list[int] | None = Field(default=None, max_length=MAX_HOME_MARKETS)

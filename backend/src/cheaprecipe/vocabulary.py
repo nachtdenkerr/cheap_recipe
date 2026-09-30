@@ -150,6 +150,12 @@ Cuisine = Literal[
 CUISINES: tuple[str, ...] = get_args(Cuisine)
 
 CookingLevel = Literal["easy", "medium", "hard"]
+
+# The meals of a day a user plans for, and what a recipe is cooked as.
+MealType = Literal["breakfast", "lunch", "dinner"]
+MEAL_TYPES: tuple[MealType, ...] = ("breakfast", "lunch", "dinner")
+DEFAULT_MEAL_TYPES: tuple[MealType, ...] = ("lunch", "dinner")
+Course = Literal["breakfast", "main"]
 COOKING_LEVELS: tuple[str, ...] = get_args(CookingLevel)
 
 # "normal" is our own value for "no dietary restriction"; Spoonacular has no

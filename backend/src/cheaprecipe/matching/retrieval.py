@@ -155,9 +155,11 @@ def complex_search(
             "sort": sort,
             "number": number,
             "offset": offset or None,
-            # Instructions, timings and the used/missed split in one response,
-            # so no informationBulk follow-up per recipe.
+            # Timings and the used/missed split in one response, so no
+            # informationBulk follow-up per recipe. The method is a flag of
+            # its own: addRecipeInformation alone returns no instructions.
             "addRecipeInformation": True,
+            "addRecipeInstructions": True,
             "addRecipeNutrition": True if add_nutrition else None,
             "fillIngredients": True,
             "ignorePantry": True,
@@ -215,6 +217,16 @@ _SEARCH_FIELDS = ("usedIngredients", "missedIngredients", "unusedIngredients",
                   "usedIngredientCount", "missedIngredientCount")
 
 
+def information_bulk(ids: list[int | str], api_key: str | None = None) -> list[dict]:
+    """Full recipe information for these Spoonacular ids, in one request."""
+    if not ids:
+        return []
+    return _get(
+        INFORMATION_BULK_URL,
+        {"ids": _csv(str(i) for i in ids), "includeNutrition": False, "apiKey": _api_key(api_key)},
+    )
+
+
 def with_information(found: list[dict], api_key: str | None = None) -> list[dict]:
     """findByIngredients results, completed with their full recipe information.
 
@@ -226,11 +238,7 @@ def with_information(found: list[dict], api_key: str | None = None) -> list[dict
     if not found:
         return []
     ids = [recipe["id"] for recipe in found]
-    details = _get(
-        INFORMATION_BULK_URL,
-        {"ids": _csv(str(i) for i in ids), "includeNutrition": False, "apiKey": _api_key(api_key)},
-    )
-    by_id = {recipe["id"]: recipe for recipe in details}
+    by_id = {recipe["id"]: recipe for recipe in information_bulk(ids, api_key)}
     missing = [i for i in ids if i not in by_id]
     if missing:
         log.warning("informationBulk returned nothing for %d recipes: %s", len(missing), missing)

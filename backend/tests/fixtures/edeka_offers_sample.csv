@@ -1,0 +1,10 @@
+title,price,category,descriptions,validTill,weekday_in_title,validFrom,quantity_amount,quantity_unit,quantity_basis,pack_count,deposit,price_per_unit,price_per_unit_unit,ingredient_en,can_cook,use_baking,use_drinks
+Speisezwiebeln,1.59,Obst & Gemüse,2 kg,2026-10-03,,2026-09-28,2.0,kg,package,,,0.8,kg,onion,True,False,False
+Weihenstephan Butter,1.29,Molkerei & Käse,250 g,2026-10-03,,2026-09-28,250.0,g,package,,,5.16,kg,unsalted butter,True,True,False
+De Cecco Pasta,1.69,Grundnahrung,1 kg,2026-10-03,,2026-09-28,1.0,kg,package,,,1.69,kg,pasta,True,False,False
+Kirschtomaten,2.29,Obst & Gemüse,500 g,2026-10-03,,2026-09-28,500.0,g,package,,,4.58,kg,cherry tomatoes,True,False,False
+Frische Hähnchenbrustfilets,1.11,Fleisch & Wurst,100 g,2026-10-03,,2026-09-28,100.0,g,price_basis,,,11.1,kg,fresh chicken breast fillets,True,False,False
+Käsekrainer,1.49,Fleisch & Wurst,100 g,2026-10-03,,2026-09-28,100.0,g,price_basis,,,14.9,kg,cheese sausage,True,False,False
+Montepulciano Rotwein,3.49,Wein & Sekt,0.75 l,2026-10-03,,2026-09-28,0.75,l,package,,,4.65,l,red wine,True,False,True
+Elstar Äpfel,2.99,Obst & Gemüse,1 kg,2026-10-03,,2026-09-28,1.0,kg,package,,,2.99,kg,apple,True,True,False
+Katzenstreu,4.99,Tierbedarf,10 l,2026-10-03,,2026-09-28,10.0,l,package,,,0.5,l,cat litter,False,False,False

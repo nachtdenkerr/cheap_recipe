@@ -1,4 +1,12 @@
-"""Classify English ingredients: cookability and usage flags.
+"""Classify English ingredients: cookability, usage flags, and their role in a meal.
+
+`meal_role` says what an offer is in a meal — a protein to build a dinner on,
+a vegetable, a carb, or a snack that no recipe search should mention.
+`base_ingredient` is the plain name a recipe would use for it, in the
+vocabulary of recipe sites: "marinated pork neck steak" is "pork shoulder",
+"chicken mini steaks" are "chicken breast". Recipe searches ask for the base
+(Spoonacular knows "pork shoulder", not "pork neck"), and a recipe's
+"chicken breast" is matched to the marinated steaks through it.
 
 No diet here. A grocery item belongs to many diets at once — an avocado is
 vegan, gluten-free, keto and paleo — so a single label was always lossy, and
@@ -27,13 +35,20 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 20
 # ingredient names and a stray blank line.
-TOKENS_PER_RECORD = 60
+TOKENS_PER_RECORD = 110
+
+MEAL_ROLES = (
+    "protein", "vegetable", "fruit", "carb", "dairy", "pantry",
+    "convenience", "snack_or_sweet", "drink",
+)
 
 CLASS_COLUMNS = [
     "ingredient_en",
     "can_cook",
     "use_baking",
     "use_drinks",
+    "meal_role",
+    "base_ingredient",
 ]
 
 SYSTEM_PROMPT = """
@@ -66,6 +81,34 @@ only in ordinary savoury cooking has neither, e.g.:
 - "milk"     -> use_baking = true,  use_drinks = true
 - "red wine" -> use_baking = false, use_drinks = true
 
+4) meal_role (one of these strings) — what the item is in a meal:
+   - "protein":     meat, poultry, fish, seafood, eggs, tofu, beans and lentils —
+                    including marinated or pre-seasoned cuts ("marinated chicken steaks")
+   - "vegetable":   fresh, frozen or canned vegetables, mushrooms, herbs
+   - "fruit":       fruit
+   - "carb":        pasta, rice, potatoes, bread, flour, tortillas, grains, oats
+   - "dairy":       milk, cheese, yogurt, cream, butter, quark
+   - "pantry":      oils, spices, stock, sauces, condiments, canned tomatoes, sugar, jam
+   - "convenience": ready meals, prepared components and anything spread on
+                    bread, eaten as they are (potato pockets, frozen pizza, poultry
+                    spread, egg spread, tuna spread, cream cheese spread, herring salad)
+   - "snack_or_sweet": sweets, chocolate, cookies, cakes, puddings, gummies, chips, bars
+   - "drink":       drinks, including wine and juice
+
+5) base_ingredient (string or NULL) — the plain name an English recipe would
+   use for this item, in everyday recipe vocabulary: singular or as recipes
+   write it, without brand, pack size, flavour or preparation. Map cuts to the
+   name recipes use for them:
+   - "marinated pork neck steak"      -> "pork shoulder"
+   - "chicken mini steaks"            -> "chicken breast"
+   - "marinated chicken steaks"       -> "chicken breast"
+   - "organic hokkaido pumpkin"       -> "pumpkin"
+   - "fresh chicken breast fillets"   -> "chicken breast"
+   - "seafood prawns"                 -> "shrimp"
+   NULL for anything a recipe would not list as an ingredient: snacks,
+   sweets, ready meals, spreads ("poultry spread" is not "chicken breast"),
+   drinks other than cooking wine.
+
 If you are not sure about a usage category, set it to NULL.
 """
 
@@ -85,7 +128,9 @@ Each line must be a JSON object with this shape:
   "ingredient_en": "<ingredient name>",
   "can_cook": true or false,
   "use_baking": true or false,
-  "use_drinks": true or false
+  "use_drinks": true or false,
+  "meal_role": "<one of the roles>",
+  "base_ingredient": "<plain recipe name>" or null
 }}
 
 Here is the list of ingredient names as a JSON array:

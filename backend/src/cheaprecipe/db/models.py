@@ -56,6 +56,17 @@ generation_recipe = Table(
     ),
 )
 
+# The branches a user shops at — where their plan's offers come from. Several
+# are allowed; planning needs at least one (app/routers/generate.py).
+user_home_market = Table(
+    "user_home_market",
+    Base.metadata,
+    Column(
+        "user_id", ForeignKey("user_preference.user_id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("address_id", ForeignKey("address.id", ondelete="CASCADE"), primary_key=True),
+)
+
 # Recipes a user hearted. Keyed on the preference row: a favourite is a taste
 # signal, like the white list, not part of the account.
 favourite_recipe = Table(
@@ -143,11 +154,16 @@ class UserPreference(Base):
     white_list: Mapped[list | None] = mapped_column(JSON)
     health_goal: Mapped[str | None] = mapped_column(String(120))
     week_time_availability: Mapped[list[int] | None] = mapped_column(JSON)
+    # Which meals of the day the plan covers: vocabulary.MEAL_TYPES; None is
+    # the default (vocabulary.DEFAULT_MEAL_TYPES).
+    meal_types: Mapped[list[str] | None] = mapped_column(JSON)
     
     # How many people a plan feeds, and what a week of it may cost.
     household_size: Mapped[int | None]
     weekly_budget_cents: Mapped[int | None]
 
+    # Superseded by home_markets: a chain, where offers are per branch. Kept so
+    # existing databases still load; nothing reads it for planning any more.
     fav_supermarket_id: Mapped[int | None] = mapped_column(
         ForeignKey("supermarket.id")
     )
@@ -157,6 +173,10 @@ class UserPreference(Base):
 
     favourite_recipes: Mapped[list["RecipeCache"]] = relationship(
         secondary=favourite_recipe
+    )
+    # Where the user shops; the plan uses these branches' offers.
+    home_markets: Mapped[list["Address"]] = relationship(
+        secondary=user_home_market, order_by="Address.id"
     )
 
     user: Mapped["User"] = relationship(back_populates="preference")
@@ -208,6 +228,8 @@ class Address(Base):
     # nothing links a scraped offer back to the store it came from.
     market_id: Mapped[str] = mapped_column(String(50), unique=True)
 
+    # As the chain names the branch ("EDEKA Frank"); filled from its market search.
+    name: Mapped[str | None] = mapped_column(String(120))
     street: Mapped[str | None] = mapped_column(String(120))
     postal_code: Mapped[str | None] = mapped_column(String(20))
     city: Mapped[str | None] = mapped_column(String(80))
@@ -277,6 +299,10 @@ class Offer(Base):
     can_cook: Mapped[bool | None] = mapped_column(Boolean)
     use_baking: Mapped[bool | None] = mapped_column(Boolean)
     use_drinks: Mapped[bool | None] = mapped_column(Boolean)
+    # What it is in a meal (classify.MEAL_ROLES), and the plain name a recipe
+    # uses for it ("pork shoulder" for the marinated neck steaks).
+    meal_role: Mapped[str | None] = mapped_column(String(20))
+    base_ingredient: Mapped[str | None] = mapped_column(String(120))
 
     scraped_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -428,12 +454,24 @@ class RecipeCache(Base):
     cuisine_id: Mapped[int | None] = mapped_column(ForeignKey("cuisine.id"))
 
     servings: Mapped[int | None]
+    # The most restrictive diet the recipe fits (calculation/diet.py): a
+    # vegetarian user is only planned recipes whose diet is vegetarian or vegan.
+    diet_type: Mapped[str | None] = mapped_column(String(20))
+    # "breakfast" or "main" (vocabulary.Course): from Spoonacular's dishTypes,
+    # else labelled by agents/labels.py.
+    course: Mapped[str | None] = mapped_column(String(20))
+    # What the dish is, labelled once by agents/labels.py: "pasta", "chicken".
+    dish_kind: Mapped[str | None] = mapped_column(String(30))
+    main_ingredient: Mapped[str | None] = mapped_column(String(80))
     total_time: Mapped[int | None]
     cooking_time: Mapped[int | None]
     waiting_time: Mapped[int | None]
     total_kcal: Mapped[int | None]
 
     instructions: Mapped[str | None] = mapped_column(Text)
+    # The method has been through the method editor (agents/method.py):
+    # `instructions` then holds its clean steps, one per line.
+    method_checked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -594,3 +632,57 @@ class GenerationItem(Base):
             f"GenerationItem(name={self.display_name!r}, amount={self.amount!r}, "
             f"unit={self.unit!r}, offer_id={self.offer_id!r})"
         )
+
+
+# --- the weekly refresh -------------------------------------------------------------
+
+class WeeklyRefresh(Base):
+    """One store's refresh for one week: offers fetched and loaded, recipe pool topped up.
+
+    The row is also the lock (cheaprecipe/refresh.py, app/scheduler.py): the
+    unique (store, week_start) means two API processes cannot both start the
+    Monday run, and `status` says whether this week still needs one.
+    """
+
+    __tablename__ = "weekly_refresh"
+    __table_args__ = (UniqueConstraint("store", "week_start", name="uq_refresh_week"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # The branch: "<chain>:<market id>", e.g. "edeka:10001604".
+    store: Mapped[str] = mapped_column(String(60))
+    # Monday of the offer week, German time.
+    week_start: Mapped[date]
+    # "running", "done" or "failed".
+    status: Mapped[str] = mapped_column(String(10))
+    attempts: Mapped[int] = mapped_column(default=1)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    error: Mapped[str | None] = mapped_column(Text)
+    # What the run did: offers loaded, recipes fetched per diet.
+    summary: Mapped[dict | None] = mapped_column(JSON)
+
+    def __repr__(self) -> str:
+        return f"WeeklyRefresh(store={self.store!r}, week={self.week_start}, status={self.status!r})"
+
+
+class RecipeFetch(Base):
+    """One Spoonacular search made to fill the recipe pool.
+
+    Counted per week to cap the quota the app may spend on its own, and per
+    query, so asking the same question again pages past what it already got
+    (`offset`) instead of fetching the same recipes twice.
+    """
+
+    __tablename__ = "recipe_fetch"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store: Mapped[str] = mapped_column(String(20))
+    week_start: Mapped[date]
+    # diet | intolerances | excluded ingredients — what was asked.
+    query_key: Mapped[str] = mapped_column(String(500))
+    # "weekly" (the Monday refresh) or "top-up" (a user ran short).
+    reason: Mapped[str] = mapped_column(String(10))
+    offset: Mapped[int] = mapped_column(default=0)
+    returned: Mapped[int] = mapped_column(default=0)
+    added: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -3,6 +3,10 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 from app import security
 from app.main import app
 from app.quota import STORE_TZ, week_bounds
@@ -18,11 +22,9 @@ from cheaprecipe.db.models import (
     RecipeIngredient,
     Supermarket,
     User,
+    UserPreference,
 )
 from cheaprecipe.db.session import get_session, init_db, make_engine
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 PASSWORD = "correct horse battery"
 
@@ -91,26 +93,35 @@ def _seed_plan(factory, email="nga@example.com"):
             ingredient_en="butter",
         )
         recipe = RecipeCache(
-            name="Pumpkin Gnocchi", servings=2, total_time=35,
+            name="Pumpkin Gnocchi", servings=2, total_time=35, diet_type="vegetarian",
             instructions="Roast the pumpkin.\n\nBrown the butter.",
             ingredients=[
                 RecipeIngredient(name="pumpkin", amount=500, unit="g", canonical_ingredient=pumpkin),
                 RecipeIngredient(name="butter", amount=50, unit="g", canonical_ingredient=butter),
                 RecipeIngredient(name="sage", amount=8, unit="leaves"),
+                RecipeIngredient(name="salt", amount=1, unit="g"),
+                RecipeIngredient(name="carrots", amount=300, unit="g"),
             ],
         )
         user = session.query(User).filter_by(email=email).one()
+        _set_home(user, store)
         generation = Generation(
             user=user, diet_type="vegetarian", recipes=[recipe],
             items=[
                 GenerationItem(offer=pumpkin_offer, amount=500, unit="g"),
                 GenerationItem(offer=butter_offer, amount=50, unit="g"),
                 GenerationItem(name="sage", amount=8, unit="leaves"),
+                GenerationItem(name="carrot"),
             ],
         )
         session.add_all([edeka, generation])
         session.commit()
         return recipe.id
+
+
+def _set_home(user, *branches):
+    user.preference = user.preference or UserPreference()
+    user.preference.home_markets = list(branches)
 
 
 def test_signup_login_and_me(client):
@@ -127,8 +138,9 @@ def test_signup_login_and_me(client):
     assert me == {
         "name": "Nga", "email": "nga@example.com", "dietType": "normal",
         "householdSize": 1, "weeklyBudgetCents": None, "allergens": [],
-        "market": None, "cuisines": [], "whiteList": [], "blackList": [],
+        "homeMarkets": [], "cuisines": [], "whiteList": [], "blackList": [],
         "healthGoal": None, "age": None, "gender": None, "weekTimeAvailability": None,
+            "mealTypes": ["lunch", "dinner"],
     }
 
 
@@ -149,26 +161,35 @@ def test_endpoints_require_a_valid_token(client):
 def test_update_preferences(client, db):
     token = _signup(client)["token"]
     with db() as session:
-        session.add(Supermarket(name="EDEKA"))
+        branch = Address(supermarket=Supermarket(name="EDEKA"), market_id="10001604",
+                         name="EDEKA Frank", city="Flein")
+        session.add(branch)
         session.commit()
+        branch_id = branch.id
 
     response = client.post(
         "/auth/me/preferences",
         headers=_auth(token),
         json={"dietType": "vegan", "householdSize": 2, "allergens": ["nuts"],
-              "market": "edeka", "cuisines": ["Italian"]},
+              "homeMarketIds": [branch_id], "cuisines": ["Italian"]},
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert (body["dietType"], body["householdSize"], body["market"]) == ("vegan", 2, "EDEKA")
+    assert (body["dietType"], body["householdSize"]) == ("vegan", 2)
+    assert body["homeMarkets"] == [{
+        "id": branch_id, "chain": "edeka", "marketId": "10001604", "name": "EDEKA Frank",
+        "street": None, "postalCode": None, "city": "Flein",
+    }]
     assert body["allergens"] == ["nuts"] and body["cuisines"] == ["Italian"]
 
     for bad in ({"dietType": "ketogenic"}, {"allergens": ["pollen"]}):
         rejected = client.post("/auth/me/preferences", headers=_auth(token), json=bad)
         assert rejected.status_code == 422, bad
 
-    unknown = client.post("/auth/me/preferences", headers=_auth(token), json={"market": "Nowhere"})
+    unknown = client.post("/auth/me/preferences", headers=_auth(token), json={"homeMarketIds": [999]})
     assert unknown.status_code == 422
+    too_many = client.post("/auth/me/preferences", headers=_auth(token), json={"homeMarketIds": [1, 2, 3, 4]})
+    assert too_many.status_code == 422
 
 
 def test_ingredient_lists_are_cleaned_and_saved(client):
@@ -207,13 +228,23 @@ def test_recipes_are_costed_against_the_plan(client, db):
     assert recipe["steps"] == ["Roast the pumpkin.", "Brown the butter."]
     assert recipe["minutes"] == 35
 
-    pumpkin, _butter, sage = recipe["ingredients"]
+    pumpkin, _butter, sage, salt, carrots = recipe["ingredients"]
     assert pumpkin["offer"]["priceCents"] == 111 and not pumpkin["pantry"]
-    assert sage == {"name": "sage", "amount": "8 leaves", "offer": None, "pantry": True}
+    # Carrots are not on offer: estimated at the regular price of a 1 kg bag.
+    assert carrots["offer"] is None and carrots["regularPriceCents"] == 129
+    # Sage has a regular price, but "8 leaves" does not convert: unpriced.
+    assert sage == {
+        "name": "sage", "amount": "8 leaves", "offer": None, "pantry": False,
+        "regularPriceCents": None,
+    }
+    assert salt["pantry"] is True
+    assert recipe["cost"]["unpricedCount"] == 1
 
-    # Half the pumpkin (0.555) + a fifth of the butter (0.358).
-    assert recipe["cost"]["totalCents"] == 91
-    assert recipe["cost"]["perServingCents"] == 46
+    # Half the pumpkin (0.555) + a fifth of the butter (0.358), exact, plus
+    # 300 g of a 1.29 kg-bag of carrots (0.387), estimated.
+    assert recipe["cost"]["totalCents"] == 130
+    assert recipe["cost"]["estimatedCents"] == 39
+    assert recipe["cost"]["perServingCents"] == 65
     assert recipe["cost"]["leftoverCents"] == 111 + 179 - 91
 
     # (500 g × 26 + 50 g × 717) / 100 / 2 servings
@@ -258,7 +289,7 @@ def test_only_planned_recipes_fill_the_shopping_list(client, db):
 
     planned = client.post(f"/recipes/{recipe_id}/meal-plan", headers=_auth(token))
     assert planned.status_code == 200 and planned.json()["inMealPlan"] is True
-    assert len(client.get("/shopping", headers=_auth(token)).json()) == 2
+    assert len(client.get("/shopping", headers=_auth(token)).json()) == 4
 
     client.delete(f"/recipes/{recipe_id}/meal-plan", headers=_auth(token))
     assert client.get("/shopping", headers=_auth(token)).json() == []
@@ -270,9 +301,13 @@ def test_shopping_list_and_ticking_items(client, db):
     client.post(f"/recipes/{recipe_id}/meal-plan", headers=_auth(token))
 
     items = client.get("/shopping", headers=_auth(token)).json()
-    # The sage line has no offer, so there is nothing to buy on the list.
-    assert [i["offer"]["title"] for i in items] == ["Hokkaido Kürbis", "Weihenstephan Butter"]
+    # Everything but the salt (pantry): two offers, then two bought regular.
+    assert [i["name"] for i in items] == ["hokkaido pumpkin", "butter", "sage", "carrot"]
+    assert [i["offer"]["title"] for i in items[:2]] == ["Hokkaido Kürbis", "Weihenstephan Butter"]
     assert all(i["quantity"] == 1 and i["usedBy"] == ["Pumpkin Gnocchi"] for i in items)
+    sage, carrot = items[2:]
+    assert (sage["offer"], sage["amount"], sage["estimatedPriceCents"]) == (None, "8 leaves", None)
+    assert (carrot["amount"], carrot["estimatedPriceCents"]) == ("300 g", 129)
 
     ticked = client.patch(
         f"/shopping/{items[0]['id']}", headers=_auth(token), json={"checked": True}
@@ -328,6 +363,9 @@ def fake_planner(monkeypatch):
     monkeypatch.setattr(planner, "plan", fake_plan)
     monkeypatch.setattr(planner, "plan_with_agent", fake_plan)
     monkeypatch.setattr(critic, "critique", fake_critique)
+    # These candidates have no ingredients; routing, not the offer filter, is
+    # under test here (that has its own tests in test_calculation/integration).
+    monkeypatch.setattr(planner, "using_offers", lambda recipes, offers, minimum=3: recipes)
     calls.reviews = reviews
     calls.verdicts = verdicts
     return calls
@@ -374,8 +412,8 @@ def test_refine_keeps_planned_and_replaces_the_rest(client, db, fake_planner):
 
     # The planned recipe's shopping lines came along, tick included.
     items = client.get("/shopping", headers=_auth(token)).json()
-    assert [(i["offer"]["title"], i["checked"]) for i in items] == [
-        ("Hokkaido Kürbis", False), ("Weihenstephan Butter", True),
+    assert [(i["name"], i["checked"]) for i in items] == [
+        ("hokkaido pumpkin", False), ("butter", True), ("sage", False), ("carrot", False),
     ]
 
 
@@ -400,7 +438,8 @@ def test_pantry_items_reach_the_planner_as_free_items(client, db, fake_planner):
 def test_a_note_goes_to_the_llm_planner(client, db, monkeypatch, fake_planner):
     token = _signup(client)["token"]
     _seed_plan(db)
-    _add_candidates(db, "Mild Curry")
+    # Two for the one slot: with a choice to make, the agent makes it.
+    _add_candidates(db, "Mild Curry", "Lentil Soup")
     monkeypatch.setattr(planner, "plan", lambda *a, **k: pytest.fail("greedy path used"))
 
     client.post(
@@ -440,6 +479,7 @@ def test_failed_refine_does_not_use_the_quota(client, db, monkeypatch):
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     monkeypatch.setattr(planner, "plan_with_agent", unavailable)
+    monkeypatch.setattr(planner, "using_offers", lambda recipes, offers, minimum=3: recipes)
     response = client.post("/generate/refine", headers=_auth(token), json={"mode": "replace"})
     assert response.status_code == 503
     assert client.get("/generate/quota", headers=_auth(token)).json()["remaining"] == 2
@@ -491,7 +531,7 @@ def _set_week(client, token, week):
 def test_refine_sends_the_week_and_the_kept_recipes_to_the_critic(client, db, fake_planner):
     token = _signup(client)["token"]
     kept = _seed_plan(db)  # Pumpkin Gnocchi, 35 min
-    _add_candidates(db, "Fresh Salad")
+    _add_candidates(db, "Fresh Salad", "Spare Stew")
     client.post(f"/recipes/{kept}/meal-plan", headers=_auth(token))
     _set_week(client, token, [60] * 7)
 
@@ -521,9 +561,11 @@ def test_the_weekly_plan_skips_recipes_longer_than_any_day(client, db, fake_plan
     token = _signup(client)["token"]
     with db() as session:
         # Offers to plan from, but no plan yet this week.
-        session.add(Supermarket(name="EDEKA", addresses=[Address(market_id="1", offers=[
+        branch = Address(market_id="1", offers=[
             Offer(title="Kürbis", price=1.0, valid_till=datetime.now(STORE_TZ).date()),
-        ])]))
+        ])
+        session.add(Supermarket(name="EDEKA", addresses=[branch]))
+        _set_home(session.query(User).one(), branch)
         session.add_all([
             RecipeCache(name="Slow roast", servings=4, total_time=180),
             RecipeCache(name="Quick soup", servings=2, total_time=25),
@@ -534,5 +576,192 @@ def test_the_weekly_plan_skips_recipes_longer_than_any_day(client, db, fake_plan
     response = client.post("/generate", headers=_auth(token))
     assert response.status_code == 200, response.text
     assert [r.name for r in fake_planner[0]["recipes"]] == ["Quick soup"]
-    # The free weekly plan never calls the critic.
-    assert fake_planner.reviews == []
+    # The weekly plan is the agent's, and the critic reviews it.
+    assert [r.name for r in fake_planner.reviews[0]["plan"].recipes] == ["Quick soup"]
+    with db() as session:
+        assert session.query(Generation).one().model == "agent+critic"
+
+
+def test_a_tick_on_a_regular_price_item_is_saved_and_survives_a_refine(client, db, fake_planner):
+    token = _signup(client)["token"]
+    kept = _seed_plan(db)
+    _add_candidates(db, "Dropped Soup", to_current_plan=True)
+    _add_candidates(db, "Fresh Salad")
+    client.post(f"/recipes/{kept}/meal-plan", headers=_auth(token))
+
+    carrot = next(i for i in client.get("/shopping", headers=_auth(token)).json() if i["name"] == "carrot")
+    ticked = client.patch(f"/shopping/{carrot['id']}", headers=_auth(token), json={"checked": True})
+    assert ticked.status_code == 200 and ticked.json()["checked"] is True
+
+    assert client.post("/generate/refine", headers=_auth(token), json={"mode": "replace"}).status_code == 200
+    after = {i["name"]: i["checked"] for i in client.get("/shopping", headers=_auth(token)).json()}
+    assert after["carrot"] is True
+    assert "salt" not in after  # pantry never reaches the list
+
+
+# --- home markets ----------------------------------------------------------------------
+
+EDEKA_SEARCH = {"markets": [{
+    "id": 10001604, "name": "EDEKA Frank",
+    "contact": {"address": {"street": "Erlachstraße 45", "city": {"name": "Flein", "zipCode": "74223"}}},
+}]}
+
+
+class _Response:
+    def __init__(self, body):
+        self.body = body
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.body
+
+
+def test_market_search_finds_and_remembers_branches(client, db, monkeypatch):
+    from cheaprecipe.ingestion import markets
+
+    asked = []
+
+    def fake_get(url, params, timeout):
+        asked.append(params["path"])
+        return _Response(EDEKA_SEARCH)
+
+    monkeypatch.setattr(markets.requests, "get", fake_get)
+    token = _signup(client)["token"]
+
+    found = client.get("/markets", headers=_auth(token), params={"q": "Flein"}).json()
+    assert "searchstring=Flein" in asked[0]
+    assert [(m["chain"], m["name"], m["postalCode"]) for m in found] == [("edeka", "EDEKA Frank", "74223")]
+    # Found once, the same row after: its id is what the profile stores.
+    again = client.get("/markets", headers=_auth(token), params={"q": "Flein"}).json()
+    assert again[0]["id"] == found[0]["id"]
+
+    # ALDI SÜD has one national offer list, so one entry, found by name.
+    aldi = client.get("/markets", headers=_auth(token), params={"q": "ald"}).json()
+    assert aldi[0]["chain"] == "aldi" and aldi[0]["name"] == "ALDI SÜD"
+
+    assert client.get("/markets", headers=_auth(token), params={"q": "F"}).status_code == 422
+
+
+def test_market_search_falls_back_to_known_branches(client, db):
+    # conftest keeps the network out of reach: EDEKA's search fails.
+    with db() as session:
+        session.add(Address(supermarket=Supermarket(name="EDEKA"), market_id="7", name="EDEKA Frank", city="Flein"))
+        session.commit()
+    token = _signup(client)["token"]
+    found = client.get("/markets", headers=_auth(token), params={"q": "flein"}).json()
+    assert [m["name"] for m in found] == ["EDEKA Frank"]
+
+
+def test_planning_needs_a_home_market(client, db):
+    token = _signup(client)["token"]
+    response = client.post("/generate", headers=_auth(token))
+    assert response.status_code == 409
+    assert "home supermarket" in response.json()["detail"]
+
+
+def test_offers_come_from_every_home_market_and_no_other(client, db, fake_planner):
+    token = _signup(client)["token"]
+    today = datetime.now(STORE_TZ).date()
+    with db() as session:
+        mine = [Address(market_id=str(n), offers=[Offer(title=f"Offer {n}", price=1.0, valid_till=today,
+                                               quantity_amount=1, quantity_unit="kg",
+                                               price_per_unit=1.0, price_per_unit_unit="kg")])
+                for n in (1, 2)]
+        other = Address(market_id="3", offers=[Offer(title="Elsewhere", price=1.0, valid_till=today)])
+        session.add(Supermarket(name="EDEKA", addresses=[*mine, other]))
+        session.add(RecipeCache(name="Quick soup", servings=2, total_time=25))
+        _set_home(session.query(User).one(), *mine)
+        session.commit()
+
+    assert client.post("/generate", headers=_auth(token)).status_code == 200
+    assert sorted(i.name for i in fake_planner[0]["offers"]) == ["Offer 1", "Offer 2"]
+
+
+def test_a_new_home_market_without_offers_is_refreshed_in_the_background(client, db, monkeypatch):
+    from app import scheduler
+
+    ran = []
+    monkeypatch.setattr(scheduler, "refresh_now", lambda factory, branches: ran.append(branches))
+    token = _signup(client)["token"]
+    with db() as session:
+        branch = Address(supermarket=Supermarket(name="EDEKA"), market_id="42")
+        session.add(branch)
+        session.commit()
+        branch_id = branch.id
+
+    client.post("/auth/me/preferences", headers=_auth(token), json={"homeMarketIds": [branch_id]})
+    assert ran == [[("edeka", "42")]]
+    # Planning meanwhile says why there is nothing yet.
+    response = client.post("/generate", headers=_auth(token))
+    assert response.status_code == 409 and "being loaded" in response.json()["detail"]
+
+
+# --- the week grid -----------------------------------------------------------------------
+
+def test_meal_types_are_saved_in_the_days_order(client):
+    token = _signup(client)["token"]
+    saved = client.post("/auth/me/preferences", headers=_auth(token),
+                        json={"mealTypes": ["dinner", "breakfast", "dinner"]})
+    assert saved.status_code == 200 and saved.json()["mealTypes"] == ["breakfast", "dinner"]
+    for bad in ([], ["brunch"]):
+        rejected = client.post("/auth/me/preferences", headers=_auth(token), json={"mealTypes": bad})
+        assert rejected.status_code == 422, bad
+
+
+def test_the_week_grid_shows_the_meal_plan(client, db):
+    token = _signup(client)["token"]
+    gnocchi = _seed_plan(db)  # serves 2
+    client.post("/auth/me/preferences", headers=_auth(token), json={"mealTypes": ["lunch", "dinner"]})
+
+    empty = client.get("/mealplan", headers=_auth(token)).json()
+    assert len(empty["days"]) == 5 and empty["emptyMeals"] == 10  # nothing in the plan yet
+
+    client.post(f"/recipes/{gnocchi}/meal-plan", headers=_auth(token))
+    week = client.get("/mealplan", headers=_auth(token)).json()
+    monday, tuesday = week["days"][:2]
+    assert monday["day"] == "monday" and [m["meal"] for m in monday["meals"]] == ["lunch", "dinner"]
+    # Serves 2 for one person: cooked for Monday's dinner, Tuesday's lunch is leftovers.
+    assert monday["meals"][1] == {"meal": "dinner", "recipeId": str(gnocchi),
+                                  "title": "Pumpkin Gnocchi", "leftover": False}
+    assert tuesday["meals"][0]["title"] == "Pumpkin Gnocchi" and tuesday["meals"][0]["leftover"]
+    assert week["emptyMeals"] == 8 and week["spare"] == []
+
+
+def test_a_recipe_without_its_method_gets_it_when_shown(client, db, monkeypatch):
+    from cheaprecipe.matching import retrieval
+
+    token = _signup(client)["token"]
+    gnocchi = _seed_plan(db)
+    with db() as session:
+        row = session.get(RecipeCache, gnocchi)
+        row.instructions, row.source, row.external_id = None, "spoonacular", "716429"
+        session.commit()
+    asked = []
+
+    def information_bulk(ids, api_key=None):
+        asked.append(list(ids))
+        return [{"id": 716429, "analyzedInstructions": [{"steps": [
+            {"number": 1, "step": "Roast the pumpkin."}, {"number": 2, "step": "Brown the butter."},
+        ]}]}]
+
+    monkeypatch.setattr(retrieval, "information_bulk", information_bulk)
+    assert client.get("/recipes", headers=_auth(token)).json()[0]["steps"] == [
+        "Roast the pumpkin.", "Brown the butter.",
+    ]
+    # Stored: the next view asks Spoonacular nothing.
+    client.get(f"/recipes/{gnocchi}", headers=_auth(token))
+    assert asked == [["716429"]]
+
+
+def test_a_failed_method_fetch_still_shows_the_recipe(client, db):
+    token = _signup(client)["token"]
+    gnocchi = _seed_plan(db)
+    with db() as session:
+        row = session.get(RecipeCache, gnocchi)
+        row.instructions, row.source, row.external_id = None, "spoonacular", "716429"
+        session.commit()
+    # conftest refuses the network: the fetch fails, the recipe is served.
+    response = client.get(f"/recipes/{gnocchi}", headers=_auth(token))
+    assert response.status_code == 200 and response.json()["steps"] == []
