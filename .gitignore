@@ -222,3 +222,7 @@ backend/logs/
 backend/data/*.bak
 backend/data/*.bak-*
 backend/data/*.csv.bak
+
+# Evaluation fixtures and reports: store offers and Spoonacular recipes, kept local
+backend/evals/fixtures/*.json
+backend/evals/results/
