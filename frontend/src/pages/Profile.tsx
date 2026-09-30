@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 
 import { fetchRecipes, fetchUser, savePreferences } from '../api/client'
-import type { Allergen, DietType, Recipe, User } from '../api/types'
-import { ALLERGENS, DIETS } from '../api/vocabulary'
+import type { Allergen, DietType, Market, MealType, Recipe, User } from '../api/types'
+import { ALLERGENS, DIETS, MEAL_TYPES } from '../api/vocabulary'
 import { IngredientListEditor } from '../components/IngredientListEditor'
+import { LoadError, loadErrorText } from '../components/LoadError'
+import { MarketPicker, marketLine } from '../components/MarketPicker'
 import { WeekTimeEditor, WeekTimeSummary } from '../components/WeekTime'
-import { formatPrice } from '../format'
+import { formatCost, formatPrice } from '../format'
 import { t } from '../i18n/strings'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -24,6 +26,7 @@ function listOrNone(items: string[]): string {
 }
 
 export function Profile() {
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [dietType, setDietType] = useState<DietType>('normal')
@@ -31,6 +34,8 @@ export function Profile() {
   const [whiteList, setWhiteList] = useState<string[]>([])
   const [blackList, setBlackList] = useState<string[]>([])
   const [weekTime, setWeekTime] = useState<number[] | null>(null)
+  const [homeMarkets, setHomeMarkets] = useState<Market[]>([])
+  const [mealTypes, setMealTypes] = useState<MealType[]>([])
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [editing, setEditing] = useState(false)
 
@@ -40,26 +45,38 @@ export function Profile() {
     setWhiteList(saved.whiteList)
     setBlackList(saved.blackList)
     setWeekTime(saved.weekTimeAvailability)
+    setHomeMarkets(saved.homeMarkets)
+    setMealTypes(saved.mealTypes)
   }
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchUser(), fetchRecipes()]).then(([userResult, recipeResult]) => {
-      if (!active) return
-      setUser(userResult)
-      setDraftFrom(userResult)
-      setRecipes(recipeResult)
-    })
+    Promise.all([fetchUser(), fetchRecipes()])
+      .then(([userResult, recipeResult]) => {
+        if (!active) return
+        setUser(userResult)
+        setDraftFrom(userResult)
+        setRecipes(recipeResult)
+        // No supermarket yet (Home sends people here for it): open in edit mode.
+        if (userResult.homeMarkets.length === 0) setEditing(true)
+      })
+      .catch((error) => active && setLoadError(loadErrorText(error)))
     return () => {
       active = false
     }
   }, [])
+
+  if (loadError) {
+    return <LoadError message={loadError} />
+  }
 
   if (!user) {
     return <p className="muted">{t.common.loading}</p>
   }
 
   const dirty =
+    !sameList(homeMarkets.map((m) => m.id), user.homeMarkets.map((m) => m.id)) ||
+    !sameSet(mealTypes, user.mealTypes) ||
     dietType !== user.dietType ||
     !sameSet(allergens, user.allergens) ||
     !sameList(whiteList, user.whiteList) ||
@@ -107,6 +124,8 @@ export function Profile() {
         whiteList,
         blackList,
         weekTimeAvailability: weekTime,
+        homeMarketIds: homeMarkets.map((m) => m.id),
+        mealTypes,
       })
       setUser(updated)
       setDraftFrom(updated)
@@ -126,6 +145,8 @@ export function Profile() {
 
   const planned = recipes.filter((recipe) => recipe.inMealPlan)
   const total = planned.reduce((sum, recipe) => sum + recipe.cost.totalCents, 0)
+  const unpriced = planned.reduce((sum, recipe) => sum + recipe.cost.unpricedCount, 0)
+  const estimated = planned.reduce((sum, recipe) => sum + recipe.cost.estimatedCents, 0)
   const budget = user.weeklyBudgetCents
   const budgetUsed = budget ? Math.min(100, Math.round((total / budget) * 100)) : 0
 
@@ -153,6 +174,40 @@ export function Profile() {
 
           {editing ? (
             <>
+              <MarketPicker
+                markets={homeMarkets}
+                onChange={(markets) => {
+                  setHomeMarkets(markets)
+                  setSaveState('idle')
+                }}
+              />
+
+              <fieldset className="choice-group">
+                <legend>{t.profile.meals}</legend>
+                <p className="meta">{t.profile.mealsHint}</p>
+                <div className="choice-options">
+                  {MEAL_TYPES.map((meal) => (
+                    <label key={meal} className="choice">
+                      <input
+                        type="checkbox"
+                        checked={mealTypes.includes(meal)}
+                        // At least one meal: the last one cannot be unticked.
+                        disabled={mealTypes.length === 1 && mealTypes.includes(meal)}
+                        onChange={() => {
+                          setMealTypes((list) =>
+                            list.includes(meal)
+                              ? list.filter((m) => m !== meal)
+                              : MEAL_TYPES.filter((m) => m === meal || list.includes(m)),
+                          )
+                          setSaveState('idle')
+                        }}
+                      />
+                      {t.meal[meal]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
               <fieldset className="choice-group">
                 <legend>{t.profile.diet}</legend>
                 <p className="meta">{t.profile.dietHint}</p>
@@ -252,6 +307,27 @@ export function Profile() {
             <>
               <dl className="figure-list">
                 <div>
+                  <dt>{t.profile.markets}</dt>
+                  <dd>
+                    {user.homeMarkets.length > 0 ? (
+                      <ul className="market-list">
+                        {user.homeMarkets.map((market) => (
+                          <li key={market.id}>
+                            {market.name}
+                            <span className="meta">{marketLine(market)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="form-error">{t.profile.marketsNotSet}</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t.profile.meals}</dt>
+                  <dd>{user.mealTypes.map((meal) => t.meal[meal]).join(', ')}</dd>
+                </div>
+                <div>
                   <dt>{t.profile.diet}</dt>
                   <dd>{t.diet[user.dietType]}</dd>
                 </div>
@@ -278,10 +354,6 @@ export function Profile() {
                 <div>
                   <dt>{t.profile.budget}</dt>
                   <dd>{budget !== null ? formatPrice(budget) : t.profile.notSet}</dd>
-                </div>
-                <div>
-                  <dt>{t.profile.market}</dt>
-                  <dd>{user.market ?? t.profile.notSet}</dd>
                 </div>
                 <div>
                   <dt>{t.profile.age}</dt>
@@ -311,7 +383,7 @@ export function Profile() {
               </div>
               <div>
                 <dt>{t.profile.basketTotal}</dt>
-                <dd>{formatPrice(total)}</dd>
+                <dd>{formatCost(total, unpriced, estimated)}</dd>
               </div>
             </dl>
 
@@ -325,7 +397,7 @@ export function Profile() {
                   <span style={{ width: `${budgetUsed}%` }} />
                 </div>
                 <p className="muted budget-caption">
-                  {formatPrice(total)} / {formatPrice(budget)}
+                  {formatCost(total, unpriced, estimated)} / {formatPrice(budget)}
                 </p>
               </>
             )}

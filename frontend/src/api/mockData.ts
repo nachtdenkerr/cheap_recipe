@@ -7,7 +7,7 @@
  * costings and nutrition are hand-written; `calculation/` will produce them.
  */
 
-import type { Offer, Recipe, User } from './types'
+import type { Market, Offer, Recipe, User } from './types'
 
 const WEEK = { validFrom: '2025-11-17', validTill: '2025-11-22' }
 /** Some offers only start later in the week. */
@@ -184,7 +184,7 @@ export const recipes: Recipe[] = [
       { name: 'potato gnocchi', amount: '500 g', offer: offers.gnocchi },
       { name: 'butter', amount: '30 g', offer: offers.butter },
       { name: 'grana padano cheese', amount: '40 g', offer: offers.granaPadano },
-      { name: 'sage', amount: '8 leaves', pantry: true },
+      { name: 'sage', amount: '8 leaves', regularPriceCents: 149 },
       { name: 'olive oil, salt, pepper', amount: 'to taste', pantry: true },
     ],
     steps: [
@@ -195,9 +195,11 @@ export const recipes: Recipe[] = [
       'Fold the roast pumpkin through the gnocchi, then grate the Grana Padano over the top and serve straight from the pan.',
     ],
     cost: {
-      totalCents: 526,
-      perServingCents: 263,
+      totalCents: 556,
+      perServingCents: 278,
       leftoverCents: 362,
+      estimatedCents: 30,
+      unpricedCount: 0,
     },
     nutrition: { kcal: 610, proteinG: 18, carbsG: 78, fatG: 24 },
     rationale:
@@ -219,7 +221,8 @@ export const recipes: Recipe[] = [
       { name: 'soup vegetables', amount: '1 bunch', offer: offers.soupVegetables },
       { name: 'savoy cabbage', amount: '½ head', offer: offers.savoyCabbage },
       { name: 'carrots', amount: '250 g', offer: offers.carrots },
-      { name: 'paprika, salt, oil', amount: 'to taste', pantry: true },
+      { name: 'paprika', amount: '1 tsp', regularPriceCents: null },
+      { name: 'salt, oil', amount: 'to taste', pantry: true },
     ],
     steps: [
       'Heat the oven to 200 °C.',
@@ -232,6 +235,8 @@ export const recipes: Recipe[] = [
       totalCents: 750,
       perServingCents: 188,
       leftoverCents: 138,
+      estimatedCents: 0,
+      unpricedCount: 1,
     },
     nutrition: { kcal: 520, proteinG: 41, carbsG: 18, fatG: 31 },
     rationale:
@@ -253,7 +258,8 @@ export const recipes: Recipe[] = [
       { name: 'spinach', amount: '450 g, frozen', offer: offers.spinach },
       { name: 'vine tomatoes', amount: '400 g', offer: offers.tomatoes },
       { name: 'garlic', amount: '3 cloves', pantry: true },
-      { name: 'olive oil, chilli flakes, salt', amount: 'to taste', pantry: true },
+      { name: 'chilli flakes', amount: '1 pinch', regularPriceCents: null },
+      { name: 'olive oil, salt', amount: 'to taste', pantry: true },
     ],
     steps: [
       'Boil the pasta in well-salted water.',
@@ -265,6 +271,8 @@ export const recipes: Recipe[] = [
       totalCents: 477,
       perServingCents: 159,
       leftoverCents: 0,
+      estimatedCents: 0,
+      unpricedCount: 1,
     },
     nutrition: { kcal: 480, proteinG: 17, carbsG: 84, fatG: 8 },
     rationale:
@@ -300,6 +308,8 @@ export const recipes: Recipe[] = [
       totalCents: 620,
       perServingCents: 310,
       leftoverCents: 435,
+      estimatedCents: 0,
+      unpricedCount: 0,
     },
     nutrition: { kcal: 540, proteinG: 38, carbsG: 42, fatG: 22 },
     rationale:
@@ -321,7 +331,7 @@ export const recipes: Recipe[] = [
       { name: 'blueberries', amount: '125 g', offer: offers.blueberries },
       { name: 'muesli', amount: '100 g', offer: offers.muesli },
       { name: 'elstar apples', amount: '1 apple', offer: offers.apples },
-      { name: 'cinnamon, honey', amount: 'to taste', pantry: true },
+      { name: 'cinnamon, honey', amount: 'to taste', regularPriceCents: null },
     ],
     steps: [
       'Toast the muesli dry in a pan for 2 minutes, until it smells nutty.',
@@ -333,6 +343,8 @@ export const recipes: Recipe[] = [
       totalCents: 399,
       perServingCents: 200,
       leftoverCents: 477,
+      estimatedCents: 0,
+      unpricedCount: 1,
     },
     nutrition: { kcal: 340, proteinG: 21, carbsG: 48, fatG: 6 },
     rationale:
@@ -359,7 +371,9 @@ export const extraRecipes: Recipe[] = [
       { name: 'hokkaido pumpkin', amount: '1 kg', offer: offers.pumpkin },
       { name: 'soup vegetables', amount: '1 bunch', offer: offers.soupVegetables },
       { name: 'skyr yogurt', amount: '150 g', offer: offers.skyr },
-      { name: 'vegetable stock, salt, nutmeg', amount: 'to taste', pantry: true },
+      { name: 'vegetable stock', amount: '1 l', regularPriceCents: 179 },
+      { name: 'nutmeg', amount: '1 pinch', regularPriceCents: null },
+      { name: 'salt', amount: 'to taste', pantry: true },
     ],
     steps: [
       'Chop the pumpkin and soup greens roughly — the pumpkin skin can stay on.',
@@ -367,7 +381,7 @@ export const extraRecipes: Recipe[] = [
       'Blend smooth and season with salt and nutmeg.',
       'Serve with a spoon of skyr swirled through each bowl.',
     ],
-    cost: { totalCents: 255, perServingCents: 64, leftoverCents: 66 },
+    cost: { totalCents: 434, perServingCents: 109, leftoverCents: 66, estimatedCents: 179, unpricedCount: 1 },
     nutrition: { kcal: 190, proteinG: 8, carbsG: 30, fatG: 3 },
     rationale: 'Four bowls for under €3, and it uses the whole pumpkin.',
     isFavourite: false,
@@ -384,7 +398,7 @@ export const extraRecipes: Recipe[] = [
     ingredients: [
       { name: 'raclette potatoes', amount: '500 g', offer: offers.potatoes },
       { name: 'spinach', amount: '225 g, frozen', offer: offers.spinach },
-      { name: 'eggs', amount: '2', pantry: true },
+      { name: 'eggs', amount: '2', regularPriceCents: 299 },
       { name: 'garlic, oil, salt', amount: 'to taste', pantry: true },
     ],
     steps: [
@@ -392,7 +406,7 @@ export const extraRecipes: Recipe[] = [
       'Add the garlic and frozen spinach and cook until the spinach has thawed and the pan is dry.',
       'Make two hollows, crack in the eggs, cover and cook 3–4 minutes.',
     ],
-    cost: { totalCents: 297, perServingCents: 149, leftoverCents: 131 },
+    cost: { totalCents: 357, perServingCents: 179, leftoverCents: 131, estimatedCents: 60, unpricedCount: 0 },
     nutrition: { kcal: 420, proteinG: 18, carbsG: 46, fatG: 17 },
     rationale: 'A fridge-friendly dinner: eggs and potatoes carry it.',
     isFavourite: false,
@@ -410,14 +424,15 @@ export const extraRecipes: Recipe[] = [
       { name: 'pasta', amount: '300 g', offer: offers.pasta },
       { name: 'savoy cabbage', amount: '½ head', offer: offers.savoyCabbage },
       { name: 'carrots', amount: '250 g', offer: offers.carrots },
-      { name: 'soy sauce, garlic, oil', amount: 'to taste', pantry: true },
+      { name: 'soy sauce', amount: '3 tbsp', regularPriceCents: 249 },
+      { name: 'garlic, oil', amount: 'to taste', pantry: true },
     ],
     steps: [
       'Cook the pasta; meanwhile shred the savoy and peel the carrots into ribbons.',
       'Stir-fry the vegetables in a very hot pan for 4 minutes.',
       'Add garlic and soy sauce, then toss the drained pasta through.',
     ],
-    cost: { totalCents: 263, perServingCents: 88, leftoverCents: 164 },
+    cost: { totalCents: 308, perServingCents: 103, leftoverCents: 164, estimatedCents: 45, unpricedCount: 0 },
     nutrition: { kcal: 430, proteinG: 14, carbsG: 82, fatG: 6 },
     rationale: 'Uses the other half of the savoy from the traybake.',
     isFavourite: false,
@@ -435,19 +450,27 @@ export const extraRecipes: Recipe[] = [
       { name: 'Nile perch fillets', amount: '2 fillets', offer: offers.nilePerch },
       { name: 'vine tomatoes', amount: '400 g', offer: offers.tomatoes },
       { name: 'raclette potatoes', amount: '400 g', offer: offers.potatoes },
-      { name: 'olive oil, lemon, salt', amount: 'to taste', pantry: true },
+      { name: 'lemon', amount: '1', regularPriceCents: 59 },
+      { name: 'olive oil, salt', amount: 'to taste', pantry: true },
     ],
     steps: [
       'Slice the potatoes thinly and roast at 220 °C for 15 minutes.',
       'Add the tomatoes and the seasoned fillets on top.',
       'Roast 12 more minutes and finish with lemon.',
     ],
-    cost: { totalCents: 514, perServingCents: 257, leftoverCents: 83 },
+    cost: { totalCents: 573, perServingCents: 287, leftoverCents: 83, estimatedCents: 59, unpricedCount: 0 },
     nutrition: { kcal: 460, proteinG: 36, carbsG: 40, fatG: 15 },
     rationale: 'Fish twice a week for under €2.60 a plate.',
     isFavourite: false,
     inMealPlan: false,
   },
+]
+
+export const markets: Market[] = [
+  { id: 1, chain: 'edeka', marketId: '10001604', name: 'EDEKA Frank', street: 'Erlachstraße 45', postalCode: '74223', city: 'Flein' },
+  { id: 2, chain: 'edeka', marketId: '10000871', name: 'EDEKA Hieber', street: 'Bahnhofstraße 12', postalCode: '79539', city: 'Lörrach' },
+  { id: 3, chain: 'edeka', marketId: '10002233', name: 'EDEKA Kempf', street: 'Hauptstraße 8', postalCode: '74074', city: 'Heilbronn' },
+  { id: 4, chain: 'aldi', marketId: '1588161426582123', name: 'ALDI SÜD', street: null, postalCode: null, city: 'all branches' },
 ]
 
 export const user: User = {
@@ -457,11 +480,12 @@ export const user: User = {
   householdSize: 2,
   weeklyBudgetCents: 4000,
   allergens: ['nuts'],
-  market: 'EDEKA',
+  homeMarkets: [],
   cuisines: ['Italian', 'German'],
   whiteList: ['pumpkin', 'spinach'],
   blackList: ['coriander'],
   age: null,
   gender: null,
   weekTimeAvailability: [30, 30, 45, 30, 60, 90, 60],
+  mealTypes: ['lunch', 'dinner'],
 }

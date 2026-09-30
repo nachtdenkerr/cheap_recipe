@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
-import { fetchRecipes, fetchRefineQuota, planWeek, requestRecipes } from '../api/client'
-import type { Recipe, RefineQuota, RefineRequest } from '../api/types'
+import {
+  ApiError,
+  fetchRecipes,
+  fetchRefineQuota,
+  fetchUser,
+  planWeek,
+  requestRecipes,
+} from '../api/client'
+import type { Recipe, RefineQuota, RefineRequest, User } from '../api/types'
+import { LoadError, loadErrorText } from '../components/LoadError'
 import { RecipeCard } from '../components/RecipeCard'
 import { RecipeRequestPanel } from '../components/RecipeRequestPanel'
-import { formatDate, formatPrice, formatWeekday } from '../format'
+import { formatCost, formatDate, formatWeekday } from '../format'
 import { t } from '../i18n/strings'
 
 /** The offer window the recipes were planned against. */
@@ -12,12 +21,11 @@ function offerWindow(recipes: Recipe[]): { from: string; till: string } | null {
   const offers = recipes.flatMap((recipe) =>
     recipe.ingredients.flatMap((ingredient) => (ingredient.offer ? [ingredient.offer] : [])),
   )
-  if (offers.length === 0) return null
+  const starts = offers.flatMap((o) => (o.validFrom ? [o.validFrom] : [])).sort()
+  const ends = offers.flatMap((o) => (o.validTill ? [o.validTill] : [])).sort()
+  if (starts.length === 0 || ends.length === 0) return null
 
-  return {
-    from: offers.reduce((min, o) => (o.validFrom < min ? o.validFrom : min), offers[0].validFrom),
-    till: offers.reduce((max, o) => (o.validTill > max ? o.validTill : max), offers[0].validTill),
-  }
+  return { from: starts[0], till: ends[ends.length - 1] }
 }
 
 function ChatIcon() {
@@ -35,8 +43,13 @@ function ChatIcon() {
 }
 
 export function Home() {
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [planError, setPlanError] = useState<string | null>(null)
   const [recipes, setRecipes] = useState<Recipe[] | null>(null)
   const [quota, setQuota] = useState<RefineQuota | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  // Set when planning was tried without a home supermarket.
+  const [needsMarket, setNeedsMarket] = useState(false)
   const [planning, setPlanning] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   // Recipes that arrived with the last request, badged until the next load.
@@ -45,21 +58,37 @@ export function Home() {
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchRecipes(), fetchRefineQuota()]).then(([recipeResult, quotaResult]) => {
-      if (!active) return
-      setRecipes(recipeResult)
-      setQuota(quotaResult)
-    })
+    Promise.all([fetchRecipes(), fetchRefineQuota(), fetchUser()])
+      .then(([recipeResult, quotaResult, userResult]) => {
+        if (!active) return
+        setRecipes(recipeResult)
+        setQuota(quotaResult)
+        setUser(userResult)
+      })
+      .catch((error) => active && setLoadError(loadErrorText(error)))
     return () => {
       active = false
     }
   }, [])
 
   async function handlePlanWeek() {
+    setPlanError(null)
+    // Offers are per supermarket: without one there is nothing to plan from.
+    if (user && user.homeMarkets.length === 0) {
+      setNeedsMarket(true)
+      return
+    }
     setPlanning(true)
     try {
       setRecipes(await planWeek())
       setQuota(await fetchRefineQuota())
+    } catch (error) {
+      // The API says why (e.g. "No recipes use this week's offers").
+      if (error instanceof ApiError && error.status === 409 && /home supermarket/i.test(error.message)) {
+        setNeedsMarket(true)
+        return
+      }
+      setPlanError(error instanceof ApiError && error.status !== 0 ? error.message : loadErrorText(error))
     } finally {
       setPlanning(false)
     }
@@ -87,12 +116,18 @@ export function Home() {
     setNewIds(new Set(response.recipes.filter((r) => !before.has(r.id)).map((r) => r.id)))
   }
 
+  if (loadError) {
+    return <LoadError message={loadError} />
+  }
+
   if (!recipes) {
     return <p className="muted">{t.common.loading}</p>
   }
 
   const planned = recipes.filter((recipe) => recipe.inMealPlan)
   const total = planned.reduce((sum, recipe) => sum + recipe.cost.totalCents, 0)
+  const unpriced = planned.reduce((sum, recipe) => sum + recipe.cost.unpricedCount, 0)
+  const estimated = planned.reduce((sum, recipe) => sum + recipe.cost.estimatedCents, 0)
 
   function replace(updated: Recipe) {
     setRecipes((current) => current?.map((r) => (r.id === updated.id ? updated : r)) ?? null)
@@ -142,6 +177,24 @@ export function Home() {
           )
         )}
       </header>
+      {planning && (
+        <p className="muted" role="status">
+          {t.home.planningHint}
+        </p>
+      )}
+      {needsMarket && (
+        <div className="plan-needs-market" role="alert">
+          <p>{t.home.needsMarket}</p>
+          <Link className="button-primary" to="/profile">
+            {t.home.setMarket}
+          </Link>
+        </div>
+      )}
+      {planError && (
+        <p className="form-error" role="alert">
+          {planError}
+        </p>
+      )}
 
       <section className="stat-row">
         <div className="stat">
@@ -150,7 +203,7 @@ export function Home() {
         </div>
         <div className="stat">
           <span className="stat-label">{t.home.totalCost}</span>
-          <span className="stat-value">{formatPrice(total)}</span>
+          <span className="stat-value">{formatCost(total, unpriced, estimated)}</span>
         </div>
       </section>
 

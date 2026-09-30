@@ -41,3 +41,10 @@ export const DAY_MINUTE_OPTIONS = Array.from({ length: (24 * 60) / 15 + 1 }, (_,
 
 /** What a day starts at when the user first sets their week. */
 export const DEFAULT_DAY_MINUTES = 60
+
+/** Home supermarkets a user may choose — app/schemas/auth.py MAX_HOME_MARKETS. */
+export const MAX_HOME_MARKETS = 3
+
+/** The meals of a day a week plan can cover — vocabulary.MEAL_TYPES. */
+export const MEAL_TYPES = ['breakfast', 'lunch', 'dinner'] as const
+export type MealType = (typeof MEAL_TYPES)[number]

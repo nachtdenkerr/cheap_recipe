@@ -18,6 +18,7 @@ export function Layout() {
           <NavLink to="/" end>
             {t.nav.home}
           </NavLink>
+          <NavLink to="/meal-plan">{t.nav.mealPlan}</NavLink>
           <NavLink to="/shopping-list">{t.nav.shoppingList}</NavLink>
         </nav>
 

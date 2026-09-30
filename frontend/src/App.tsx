@@ -7,6 +7,7 @@ import { Login } from './pages/Login'
 import { Profile } from './pages/Profile'
 import { RecipeDetail } from './pages/RecipeDetail'
 import { ShoppingList } from './pages/ShoppingList'
+import { WeekPlan } from './pages/WeekPlan'
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
       >
         <Route path="/" element={<Home />} />
         <Route path="/recipes/:id" element={<RecipeDetail />} />
+        <Route path="/meal-plan" element={<WeekPlan />} />
         <Route path="/shopping-list" element={<ShoppingList />} />
         <Route path="/profile" element={<Profile />} />
       </Route>

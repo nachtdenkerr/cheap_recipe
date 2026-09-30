@@ -447,22 +447,11 @@ dl {
   font-variant-numeric: tabular-nums;
 }
 
-.price-large {
-  font-size: 2rem;
-  letter-spacing: -0.02em;
-}
-
 .price-unit {
   color: var(--color-muted);
   font-size: 0.875rem;
   font-family: var(--font-body);
   font-weight: 400;
-}
-
-.price-block {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
 }
 
 .stat-row {
@@ -590,6 +579,24 @@ dl {
 
 .login-form .button-primary {
   margin-top: 20px;
+}
+
+.login-switch {
+  margin: 0;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* A button that reads as a link, for in-sentence actions. */
+.link-button {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .form-error {
@@ -895,6 +902,16 @@ dl {
   font-weight: 500;
 }
 
+.ingredient-regular {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.price-note {
+  display: block;
+  font-size: 0.75rem;
+}
+
 .ingredient-pantry {
   font-size: 0.75rem;
   color: var(--color-muted);
@@ -934,11 +951,38 @@ dl {
   color: var(--color-muted);
 }
 
-/* Why the planner chose this recipe — a positive signal, so `save`. */
-.rationale {
-  background: var(--color-save-soft);
-  border-color: transparent;
-  box-shadow: none;
+/* --- recipe page ---------------------------------------------------------- */
+
+.recipe-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Time and servings right under the title: body text size and colour, so
+ * they read at a glance; the icon stays muted and carries the meaning. */
+.recipe-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.recipe-facts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recipe-facts svg {
+  color: var(--color-muted);
+  flex-shrink: 0;
 }
 
 /* --- shopping list -------------------------------------------------------- */
@@ -1006,6 +1050,11 @@ dl {
 .shopping-item-price {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.shopping-item-price.estimated {
+  color: var(--color-muted);
+  font-weight: 500;
 }
 
 .shopping-item.done .shopping-item-title {
@@ -1302,5 +1351,274 @@ dl {
 @media (prefers-reduced-motion: reduce) {
   .week-time > summary::after {
     transition: none;
+  }
+}
+
+/* --- home supermarket picker --------------------------------------------- */
+
+.chip-detail {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.chip-detail::before {
+  content: '· ';
+}
+
+.market-search {
+  position: relative;
+}
+
+.market-search input {
+  width: 100%;
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.market-results {
+  margin-top: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
+.market-results ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.market-results li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.market-results li .meta {
+  grid-column: 1;
+  margin: 0;
+}
+
+.market-results li.is-active,
+.market-results li:hover {
+  background: var(--primary-soft);
+}
+
+.market-results li[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.market-name {
+  font-weight: 600;
+}
+
+.market-added {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--color-save);
+  font-weight: 600;
+}
+
+.market-status {
+  margin: 0;
+  padding: 6px 12px;
+}
+
+.market-status:empty {
+  display: none;
+}
+
+.market-status:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+.plan-needs-market {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+}
+
+.plan-needs-market p {
+  margin: 0;
+}
+
+.offer-market {
+  color: var(--color-muted);
+}
+
+.market-results ul:empty {
+  display: none;
+}
+
+.market-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.market-list {
+  text-align: right;
+}
+
+.market-list .meta {
+  display: block;
+  font-weight: 400;
+}
+
+.plan-needs-market .button-primary {
+  text-decoration: none;
+}
+
+/* --- the week grid ------------------------------------------------------- */
+
+.week-table-wrap {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.week-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.week-table th,
+.week-table td {
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.week-table thead th {
+  font-family: var(--font-heading);
+}
+
+.week-table thead th .meta {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 400;
+}
+
+.week-table tbody th {
+  width: 110px;
+  color: var(--color-muted);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.week-table tbody tr:last-child th,
+.week-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.week-recipe {
+  display: block;
+  color: var(--color-text);
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1.3;
+}
+
+.week-recipe:hover,
+.week-recipe:focus-visible {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.week-leftover {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-save-soft);
+  color: var(--color-save);
+}
+
+.week-empty {
+  color: var(--color-muted);
+}
+
+.week-days {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 12px;
+}
+
+.week-day h2 {
+  font-size: 1.125rem;
+  margin: 0 0 8px;
+}
+
+.week-day dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.week-day dl > div {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 8px;
+}
+
+.week-day dt {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.week-day dd {
+  margin: 0;
+}
+
+.week-none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.week-none p {
+  margin: 0;
+}
+
+.week-none .button-primary {
+  text-decoration: none;
+}
+
+.week-notes p {
+  margin: 8px 0 0;
+}
+
+/* Days as blocks on narrow screens, where five columns do not fit. */
+@media (max-width: 760px) {
+  .week-table-wrap {
+    display: none;
+  }
+
+  .week-days {
+    display: flex;
+    flex-direction: column;
   }
 }

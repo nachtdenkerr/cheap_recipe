@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { setFavourite, setInMealPlan } from '../api/client'
 import type { Recipe } from '../api/types'
-import { formatPrice } from '../format'
+import { formatCost } from '../format'
 import { t } from '../i18n/strings'
 import { DietBadge } from './DietBadge'
 
@@ -57,6 +57,7 @@ export function RecipeCard({ recipe, isNew = false, onChange }: Props) {
       <div className="recipe-card-head">
         <div className="recipe-card-tags">
           {isNew && <span className="badge badge-new">{t.home.newBadge}</span>}
+          {recipe.course === 'breakfast' && <span className="badge">{t.meal.breakfast}</span>}
           <DietBadge diet={recipe.dietType} />
           <span className="meta recipe-card-meta">
             {t.home.minutes(recipe.minutes)} · {t.home.servings(recipe.servings)}
@@ -91,8 +92,21 @@ export function RecipeCard({ recipe, isNew = false, onChange }: Props) {
 
       <div className="recipe-card-foot">
         <div>
-          <span className="price">{formatPrice(recipe.cost.perServingCents)}</span>
+          <span className="price">
+            {formatCost(
+              recipe.cost.perServingCents,
+              recipe.cost.unpricedCount,
+              recipe.cost.estimatedCents,
+            )}
+          </span>
           <span className="price-unit"> {t.home.perServing}</span>
+          {recipe.cost.unpricedCount > 0 ? (
+            <span className="meta price-note">{t.price.unpricedNote(recipe.cost.unpricedCount)}</span>
+          ) : (
+            recipe.cost.estimatedCents > 0 && (
+              <span className="meta price-note">{t.price.estimatedNote}</span>
+            )
+          )}
         </div>
         <button
           type="button"

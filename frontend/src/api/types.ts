@@ -9,21 +9,40 @@
  * Money is in euro cents to keep arithmetic exact — format with formatPrice().
  */
 
-import type { Allergen, DietType } from './vocabulary'
+import type { Allergen, DietType, MealType } from './vocabulary'
 
-export type { Allergen, DietType }
+export type { Allergen, DietType, MealType }
 
 export interface Offer {
+  /** The offer row; absent in the mock. */
+  id?: number
   /** Original German product name, as printed in the shop. */
   title: string
   /** Normalized English ingredient, from normalization/ingredients.py. */
-  ingredientEn: string
-  category: string
+  ingredientEn: string | null
+  /** The store's department, when the scrape had one. */
+  category: string | null
   priceCents: number
   /** ISO dates — offers are only valid for part of the week. */
-  validFrom: string
-  validTill: string
-  dietType: DietType
+  validFrom: string | null
+  validTill: string | null
+  /** The offer side has no diet (see backend vocabulary.py); kept for the mock. */
+  dietType?: DietType | null
+  /** The branch it is offered at, e.g. "EDEKA Frank". */
+  market?: string | null
+}
+
+/** A supermarket branch — GET /markets. Offers are per branch. */
+export interface Market {
+  /** Our id; what PreferencesUpdate.homeMarketIds refers to. */
+  id: number
+  chain: 'edeka' | 'aldi'
+  /** The chain's own id for the branch. */
+  marketId: string
+  name: string
+  street: string | null
+  postalCode: string | null
+  city: string | null
 }
 
 export interface RecipeIngredient {
@@ -33,8 +52,14 @@ export interface RecipeIngredient {
   amount: string
   /** The discounted offer this maps to, when the recipe is built on one. */
   offer?: Offer
-  /** True when the user is assumed to have it already (salt, oil, flour). */
+  /** Assumed at home: salt, pepper, sugar, oil, garlic. Not bought, not priced. */
   pantry?: boolean
+  /**
+   * Neither an offer nor pantry: bought at the regular price. This is the
+   * estimated shelf price of the pack it comes in, or null when no typical
+   * price is known (then the line counts towards unpricedCount).
+   */
+  regularPriceCents?: number | null
 }
 
 export interface Nutrition {
@@ -51,6 +76,13 @@ export interface RecipeCost {
   perServingCents: number
   /** Value of the part of each pack the recipe does not use. */
   leftoverCents: number
+  /** The part of totalCents estimated at regular prices — shown as "≈ …" when above 0. */
+  estimatedCents: number
+  /**
+   * Ingredients to buy with no price at all, not even an estimate. When above
+   * 0 the totals are a floor — shown as "from …".
+   */
+  unpricedCount: number
 }
 
 export interface Recipe {
@@ -72,12 +104,25 @@ export interface Recipe {
   isFavourite: boolean
   /** Chosen for this week — only these recipes fill the shopping list. */
   inMealPlan: boolean
+  /** Eaten as a breakfast; otherwise at lunch or dinner. Absent in the mock. */
+  course?: 'breakfast' | 'main'
 }
 
+/**
+ * One thing to buy — pantry staples never appear. With `offer` it is on sale;
+ * without, it is bought at the regular price, estimated when known.
+ */
 export interface ShoppingListItem {
-  offer: Offer
+  /** The generation_item row, so a tick can be saved. */
+  id: number
+  name: string
+  offer?: Offer | null
+  /** For a line that is not an offer: how much the recipes need ("700 g"). */
+  amount?: string | null
   /** How many packs to buy. */
   quantity: number
+  /** Not on offer: estimated price for `quantity` packs, or null when unknown. */
+  estimatedPriceCents?: number | null
   /** Titles of the recipes that need this item. */
   usedBy: string[]
   checked: boolean
@@ -93,8 +138,8 @@ export interface User {
   weeklyBudgetCents: number | null
   /** Allergens to exclude — fed to the allergen filter, never to the LLM. */
   allergens: Allergen[]
-  /** Chain name of the home supermarket, e.g. "EDEKA". */
-  market: string | null
+  /** Where the user shops; plans use these branches' offers. None: no plan. */
+  homeMarkets: Market[]
   cuisines: string[]
   /** Ingredients to favour when planning. */
   whiteList: string[]
@@ -104,10 +149,12 @@ export interface User {
   gender: string | null
   /** Minutes free for cooking each day, Monday first; null until set. */
   weekTimeAvailability: number[] | null
+  /** Which meals of the day the week plan covers, in the day's order. */
+  mealTypes: MealType[]
 }
 
 /** Body of POST /auth/me/preferences — only the fields sent are changed. */
-export type PreferencesUpdate = Partial<
+export type PreferencesUpdate = { homeMarketIds?: number[] } & Partial<
   Pick<
     User,
     | 'name'
@@ -115,13 +162,13 @@ export type PreferencesUpdate = Partial<
     | 'householdSize'
     | 'weeklyBudgetCents'
     | 'allergens'
-    | 'market'
     | 'cuisines'
     | 'whiteList'
     | 'blackList'
     | 'age'
     | 'gender'
     | 'weekTimeAvailability'
+    | 'mealTypes'
   >
 >
 
@@ -150,4 +197,44 @@ export interface RefineQuota {
 export interface RefineResponse {
   recipes: Recipe[]
   quota: RefineQuota
+}
+
+/** One meal of a day in GET /mealplan; no recipe means nothing is planned. */
+export interface PlannedMeal {
+  meal: MealType
+  recipeId: string | null
+  title: string | null
+  /** Cooked on an earlier day, eaten again. */
+  leftover: boolean
+}
+
+export interface PlanDay {
+  /** "monday" … "friday" */
+  day: string
+  /** ISO date */
+  date: string
+  meals: PlannedMeal[]
+}
+
+/** GET /mealplan — the recipes in the meal plan, placed Monday to Friday. */
+export interface WeekPlan {
+  mealTypes: MealType[]
+  householdSize: number
+  days: PlanDay[]
+  emptyMeals: number
+  /** Portions the week has no meal for. */
+  spare: { recipeId: string; title: string; portions: number }[]
+}
+
+/** POST /auth/login and /auth/signup */
+export interface AuthSession {
+  token: string
+  user: User
+}
+
+export interface SignupRequest {
+  username: string
+  email: string
+  password: string
+  name?: string
 }
