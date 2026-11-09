@@ -71,12 +71,12 @@ def _numbers(text: str) -> set[str]:
 @lru_cache(maxsize=1)
 def build_editor(model_name: str = DEFAULT_MODEL) -> Agent[MethodContext, EditedMethods]:
     from cheaprecipe.agents.planner import (
-        openrouter_model,  # the planner builds the model
+        chat_model,  # the planner builds the model
     )
 
     os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
     agent = Agent(
-        openrouter_model(model_name),
+        chat_model(model_name),
         deps_type=MethodContext,
         output_type=EditedMethods,
         instructions=INSTRUCTIONS,

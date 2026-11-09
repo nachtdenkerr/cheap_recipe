@@ -1,8 +1,13 @@
-"""OpenRouter client.
+"""The model client: OpenRouter, or the Neon AI Gateway.
 
-OpenRouter is OpenAI-wire-compatible, so we keep the `openai` SDK and only
-repoint `base_url`. Models are addressed by OpenRouter slug ("<vendor>/<model>"),
-which is what lets us swap vendors without touching call sites.
+Both are OpenAI-wire-compatible, so we keep the `openai` SDK and only repoint
+`base_url`. LLM_PROVIDER picks one:
+
+- `openrouter` (default): OPENROUTER_API_KEY, models by OpenRouter slug
+  ("<vendor>/<model>").
+- `neon`: the branch's AI Gateway, NEON_AI_GATEWAY_BASE_URL + _TOKEN (written
+  by `neon deploy`), models by catalog id ("gpt-5-mini"). NEON_AI_MODEL
+  replaces DEFAULT_MODEL there; other slugs lose their "<vendor>/" prefix.
 """
 
 from __future__ import annotations
@@ -21,16 +26,50 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://openrouter.ai/api/v1"
 
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
+# What DEFAULT_MODEL becomes on the Neon AI Gateway, unless NEON_AI_MODEL says.
+NEON_DEFAULT_MODEL = "gpt-5-mini"
+
+
+def provider() -> str:
+    """"neon" or "openrouter" (LLM_PROVIDER)."""
+    load_keys()
+    return "neon" if os.environ.get("LLM_PROVIDER", "").strip().lower() == "neon" else "openrouter"
+
+
+def resolve_model(model: str) -> str:
+    """The model id to send, for the provider in use."""
+    if provider() != "neon":
+        return model
+    if model == DEFAULT_MODEL:
+        return os.environ.get("NEON_AI_MODEL") or NEON_DEFAULT_MODEL
+    return model.split("/", 1)[-1]
+
+
+def neon_gateway() -> tuple[str, str]:
+    """The AI Gateway's OpenAI-compatible base URL (/v1) and its token."""
+    load_keys()
+    base = os.environ.get("NEON_AI_GATEWAY_BASE_URL")
+    token = os.environ.get("NEON_AI_GATEWAY_TOKEN")
+    if not base or not token:
+        raise RuntimeError(
+            "NEON_AI_GATEWAY_BASE_URL / NEON_AI_GATEWAY_TOKEN are not set — run `neon deploy`."
+        )
+    # The variable is the bare branch host; /v1 is the chat-completions dialect.
+    return f"{base.rstrip('/')}/v1", token
 
 
 @lru_cache(maxsize=1)
 def get_client() -> OpenAI:
-    """Shared OpenRouter client.
+    """Shared client: the Neon AI Gateway when LLM_PROVIDER=neon, else OpenRouter.
 
     OPENROUTER_API_KEY comes from .env. The two optional headers below are
     what OpenRouter attributes usage to on its public leaderboards.
     """
     load_keys()
+
+    if provider() == "neon":
+        base_url, token = neon_gateway()
+        return OpenAI(base_url=base_url, api_key=token)
 
     api_key = openrouter_api_key()
     if not api_key:
@@ -64,6 +103,7 @@ def complete(
     """
     client = client or get_client()
 
+    model = resolve_model(model)
     started = time.perf_counter()
     response = client.chat.completions.create(
         model=model,

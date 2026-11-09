@@ -32,13 +32,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from cheaprecipe.agents.contracts import Critique, Item, Plan, Quantity, Recipe
 from cheaprecipe.calculation import cost, waste
 from cheaprecipe.config import load_keys, openrouter_api_key
-from cheaprecipe.llm import DEFAULT_MODEL
+from cheaprecipe.llm import DEFAULT_MODEL, neon_gateway, provider, resolve_model
 from cheaprecipe.observability import usage as model_usage
 
 log = logging.getLogger(__name__)
@@ -477,13 +478,21 @@ class PlanningContext:
 
 
 @lru_cache(maxsize=1)
-def openrouter_model(model_name: str = DEFAULT_MODEL) -> OpenAIChatModel:
-    """The OpenRouter-backed model, built once.
+def chat_model(model_name: str = DEFAULT_MODEL) -> OpenAIChatModel:
+    """The agents' model, built once: the Neon AI Gateway when
+    LLM_PROVIDER=neon, else OpenRouter (cheaprecipe/llm.py).
 
     Not at import time: config.py deliberately reads no credentials on import
     so the modules stay importable in tests without them.
     """
     load_keys()
+    if provider() == "neon":
+        base_url, token = neon_gateway()
+        return OpenAIChatModel(
+            resolve_model(model_name),
+            provider=OpenAIProvider(base_url=base_url, api_key=token),
+        )
+
     api_key = openrouter_api_key()
     if not api_key:
         raise RuntimeError(
@@ -510,7 +519,7 @@ def build_planner(model_name: str = DEFAULT_MODEL) -> Agent[PlanningContext, Pla
     os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
     agent = Agent(
-        openrouter_model(model_name),
+        chat_model(model_name),
         deps_type=PlanningContext,
         output_type=PlanChoice,
         instructions=SYSTEM_PROMPT.format(tool_calls=MAX_TOOL_CALLS),

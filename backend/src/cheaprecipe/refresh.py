@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from cheaprecipe import vocabulary
+from cheaprecipe import storage, vocabulary
 from cheaprecipe.agents import planner
 from cheaprecipe.calculation.diet import fits, ingredient_diet
 from cheaprecipe.calculation.families import in_family, members
@@ -148,6 +148,7 @@ def refresh_offers(session: Session, store: str, store_id: str | None = None) ->
 
     store_id = store_id or default_store_id(store)
     frame = pipeline.build_offers(store=store, store_id=store_id)
+    storage.archive_offers(frame, store, store_id, week_start())
     report = LoadReport()
     offers = load_offers(session, frame, store, store_id, report)
     relink_recipes(session, offers)  # the pool's recipes, against this week's offers

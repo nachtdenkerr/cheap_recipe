@@ -135,12 +135,12 @@ class Labels(BaseModel):
 @lru_cache(maxsize=1)
 def build_labeller(model_name: str = DEFAULT_MODEL) -> Agent[list[str], Labels]:
     from cheaprecipe.agents.planner import (
-        openrouter_model,  # the planner builds the model
+        chat_model,  # the planner builds the model
     )
 
     os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
     agent = Agent(
-        openrouter_model(model_name),
+        chat_model(model_name),
         deps_type=list,
         output_type=Labels,
         instructions=INSTRUCTIONS,

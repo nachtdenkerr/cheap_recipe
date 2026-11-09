@@ -34,7 +34,7 @@ from pydantic_ai.usage import UsageLimits
 
 from cheaprecipe.agents.contracts import Critique, Plan, Recipe, UserPreference
 from cheaprecipe.agents.labels import LABELLING, DishLabel, label_of, variety_problems
-from cheaprecipe.agents.planner import openrouter_model
+from cheaprecipe.agents.planner import chat_model
 from cheaprecipe.calculation.pantry import is_pantry
 from cheaprecipe.calculation.schedule import build_week
 from cheaprecipe.llm import DEFAULT_MODEL
@@ -181,7 +181,7 @@ def build_critic(model_name: str = DEFAULT_MODEL) -> Agent[CritiqueContext, Revi
     os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
     agent = Agent(
-        openrouter_model(model_name),
+        chat_model(model_name),
         deps_type=CritiqueContext,
         output_type=Review,
         instructions=SYSTEM_PROMPT,

@@ -24,3 +24,14 @@ def no_spoonacular(monkeypatch):
     monkeypatch.setenv("WEEKLY_REFRESH", "off")
     # Nor a real model: a test drives an agent with FunctionModel, or not at all.
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
+
+
+@pytest.fixture(autouse=True)
+def no_neon_services(monkeypatch):
+    """A developer's .env holds the branch's Neon credentials: no test writes
+    to its bucket or spends its AI Gateway credits."""
+    from cheaprecipe import storage
+
+    monkeypatch.setattr(storage, "enabled", lambda: False)
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+
