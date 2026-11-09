@@ -10,7 +10,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from cheaprecipe.db.models import Base
-from cheaprecipe.db.session import database_url
+from cheaprecipe.db.session import migration_url
 
 config = context.config
 target_metadata = Base.metadata
@@ -29,7 +29,7 @@ def _configure(connection) -> None:
 
 def run_offline() -> None:
     context.configure(
-        url=config.get_main_option("sqlalchemy.url") or database_url(),
+        url=config.get_main_option("sqlalchemy.url") or migration_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         render_as_batch=True,
@@ -44,7 +44,7 @@ def run_online() -> None:
         _configure(connection)
         return
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url") or database_url()
+    section["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url") or migration_url()
     engine = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with engine.connect() as connection:
         _configure(connection)

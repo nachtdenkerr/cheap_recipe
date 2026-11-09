@@ -1,11 +1,12 @@
 """The migrations (db/migrations) build the schema the models describe."""
 
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
 from cheaprecipe.db.models import Base
-from cheaprecipe.db.session import BASELINE, make_engine, migrate
+from cheaprecipe.db.session import BASELINE, _alembic, make_engine, migrate
 
 
 def test_the_migrations_build_exactly_the_models(tmp_path):
@@ -19,11 +20,11 @@ def test_the_migrations_build_exactly_the_models(tmp_path):
 
 def test_a_database_from_before_migrations_keeps_its_data(tmp_path):
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
-    # The baseline's schema, as create_all made it — then a user in it.
-    Base.metadata.create_all(engine)
+    # The baseline's schema, as create_all made it then, with no record of
+    # migrations — then a user in it.
     with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE generation DROP COLUMN assessment"))
-        connection.execute(text("ALTER TABLE generation DROP COLUMN rounds"))
+        command.upgrade(_alembic(connection), BASELINE)
+        connection.execute(text("DROP TABLE alembic_version"))
         connection.execute(text(
             "INSERT INTO user_account (username, email, password_hash) VALUES ('nga', 'n@x.test', 'x')"
         ))

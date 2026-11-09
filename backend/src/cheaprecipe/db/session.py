@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from cheaprecipe.config import DATA_DIR, load_keys
 from cheaprecipe.db.models import Base  # noqa: F401 — the models, for the migrations
@@ -23,13 +24,34 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _with_driver(url: str) -> str:
+    """Point a bare postgres:// URL (as Neon hands them out) at psycopg 3."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 def database_url() -> str:
+    """The app's database: Neon's pooled URL when set, else local SQLite."""
     load_keys()
-    return os.environ.get("DATABASE_URL") or f"sqlite:///{DATA_DIR / 'cheaprecipe.db'}"
+    return _with_driver(os.environ.get("DATABASE_URL") or f"sqlite:///{DATA_DIR / 'cheaprecipe.db'}")
+
+
+def migration_url() -> str:
+    """Migrations need a session of their own, so they skip Neon's PgBouncer
+    pooler and use the direct (unpooled) URL when there is one."""
+    load_keys()
+    direct = os.environ.get("DATABASE_URL_UNPOOLED")
+    return _with_driver(direct) if direct and os.environ.get("DATABASE_URL") else database_url()
 
 
 def make_engine(url: str | None = None, **kwargs) -> Engine:
     url = url or database_url()
+    if url.startswith("postgresql"):
+        # Neon suspends an idle compute; a pooled connection may be gone by
+        # the next request, so check it before use.
+        kwargs.setdefault("pool_pre_ping", True)
     if url.startswith("sqlite"):
         # FastAPI serves requests from a thread pool; SQLite's default refuses that.
         # The weekly refresh writes from a background thread too: wait for its
@@ -84,9 +106,21 @@ def migrate(bind: Engine = engine) -> None:
         command.upgrade(config, "head")
 
 
-def init_db(bind: Engine = engine) -> None:
-    """The schema step: every migration applied (`migrate`)."""
-    migrate(bind)
+def init_db(bind: Engine | None = None) -> None:
+    """The schema step: every migration applied (`migrate`), over the direct
+    connection when the app's own goes through a pooler."""
+    if bind is not None:
+        migrate(bind)
+        return
+    url = migration_url()
+    if url == database_url():
+        migrate(engine)
+        return
+    direct = make_engine(url, poolclass=NullPool)
+    try:
+        migrate(direct)
+    finally:
+        direct.dispose()
 
 
 def get_session() -> Iterator[Session]:

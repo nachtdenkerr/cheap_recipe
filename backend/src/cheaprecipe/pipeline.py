@@ -228,7 +228,7 @@ def load(
             raise FileNotFoundError(
                 f"{offers_path} does not exist — run `cheaprecipe offers --store {store}` first."
             )
-        init_db(engine)
+        init_db(engine if database_url else None)
         with Session(engine) as session:
             report = load_files(session, offers_path, recipes_path, store, store_id)
         log.info("%s", report)
@@ -250,7 +250,7 @@ def weekly(store: vocabulary.Store = "edeka", force: bool = False, database_url:
 
     engine = make_engine(database_url)
     with stage("weekly_refresh", log, store=store, force=force, db=str(engine.url)):
-        init_db(engine)
+        init_db(engine if database_url else None)
         with Session(engine) as session:
             branches = [(chain_of(b), b.market_id) for b in markets_in_use(session)] or [(store, None)]
             for chain, market_id in branches:
