@@ -258,14 +258,12 @@ export interface PlanReview {
   createdAt: string
 }
 
-/** POST /auth/login and /auth/signup */
+/** Signed in with Neon Auth, and the account it opened (GET /auth/me). */
 export interface AuthSession {
-  token: string
   user: User
 }
 
 export interface SignupRequest {
-  username: string
   email: string
   password: string
   name?: string

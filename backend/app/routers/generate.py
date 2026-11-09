@@ -72,6 +72,7 @@ from cheaprecipe.db.models import (
     RecipeCache,
     User,
 )
+from cheaprecipe.db.models import PlanningJob as PlanningJobRow
 from cheaprecipe.observability import progress
 from cheaprecipe.observability.tracing import trace_context
 from cheaprecipe.vocabulary import DEFAULT_MEAL_TYPES
@@ -573,26 +574,34 @@ def refine(body: RefineRequest, user: CurrentUser, session: SessionDep) -> Refin
 
 # --- planning in the background (app/jobs.py) -----------------------------------
 
-def _job_out(job: jobs.Job) -> PlanningJob:
-    result = job.result
-    recipes, quota_left = None, None
+def _job_result(result: object) -> dict:
+    """What a finished job keeps: the recipes, and for a refine the quota left."""
     if isinstance(result, RefineResponse):
         recipes, quota_left = result.recipes, result.quota
-    elif isinstance(result, list):
-        recipes = result
+    else:
+        recipes, quota_left = result, None
+    return {
+        "recipes": [r.model_dump(mode="json") for r in recipes],
+        "quota": quota_left.model_dump(mode="json") if quota_left is not None else None,
+    }
+
+
+def _job_out(job: PlanningJobRow) -> PlanningJob:
+    result = job.result or {}
     return PlanningJob(
-        id=job.id, kind=job.kind, status=job.status, steps=list(job.steps),
-        recipes=recipes, quota=quota_left, error=job.error, error_status=job.error_status,
+        id=job.id, kind=job.kind, status=job.status, steps=list(job.steps or []),
+        recipes=result.get("recipes"), quota=result.get("quota"),
+        error=job.error, error_status=job.error_status,
     )
 
 
 def _start(kind: str, user: User, session, background: BackgroundTasks, plan) -> PlanningJob:
     """Start `plan(user, session)` as a job, or return the one already running."""
-    running = jobs.running_for(user.id)
+    running = jobs.running_for(session, user.id)
     if running is not None:
         return _job_out(running)
-    job = jobs.create(user.id, kind)
-    # Its own session: the request's is closed by the time the job runs.
+    job = jobs.create(session, user.id, kind)
+    # Its own sessions: the request's is closed by the time the job runs.
     factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
     user_id = user.id
 
@@ -600,7 +609,7 @@ def _start(kind: str, user: User, session, background: BackgroundTasks, plan) ->
         with factory() as job_session:
             return plan(job_session.get(User, user_id), job_session)
 
-    background.add_task(jobs.run, job, work)
+    background.add_task(jobs.run, factory, job.id, work, _job_result)
     return _job_out(job)
 
 
@@ -622,8 +631,8 @@ def start_refine(
 
 
 @router.get("/jobs/{job_id}")
-def planning_job(job_id: str, user: CurrentUser) -> PlanningJob:
-    job = jobs.get(job_id, user.id)
+def planning_job(job_id: str, user: CurrentUser, session: SessionDep) -> PlanningJob:
+    job = jobs.get(session, job_id, user.id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such planning job")
     return _job_out(job)

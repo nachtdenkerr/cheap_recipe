@@ -11,9 +11,8 @@ interface RedirectState {
 
 type Mode = 'signin' | 'signup'
 
-// What POST /auth/signup accepts (backend app/schemas/auth.py), checked here
-// first so the message is specific.
-const USERNAME = /^.{3,30}$/
+// Neon Auth's minimum password length, checked here first so the message is
+// specific. (The API picks the username itself, from the email.)
 const PASSWORD_MIN = 8
 
 export function Login() {
@@ -21,7 +20,6 @@ export function Login() {
   const location = useLocation()
   const [mode, setMode] = useState<Mode>('signin')
   const [name, setName] = useState('')
-  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -32,7 +30,6 @@ export function Login() {
   function validate(): string | null {
     if (!email.trim()) return t.login.emailRequired
     if (!password) return t.login.passwordRequired
-    if (signingUp && !USERNAME.test(username.trim())) return t.login.usernameInvalid
     if (signingUp && password.length < PASSWORD_MIN) return t.login.passwordTooShort(PASSWORD_MIN)
     return null
   }
@@ -49,13 +46,12 @@ export function Login() {
     try {
       const session = signingUp
         ? await signup({
-            username: username.trim(),
             email: email.trim(),
             password,
             name: name.trim() || undefined,
           })
         : await login(email.trim(), password)
-      saveSession(session.token, session.user.email)
+      saveSession(session.user.email)
       const from = (location.state as RedirectState | null)?.from
       navigate(from ?? '/', { replace: true })
     } catch (caught) {
@@ -101,15 +97,6 @@ export function Login() {
                 autoComplete="name"
                 value={name}
                 onChange={field(setName)}
-              />
-
-              <label htmlFor="username">{t.login.username}</label>
-              <input
-                id="username"
-                name="username"
-                autoComplete="username"
-                value={username}
-                onChange={field(setUsername)}
               />
             </>
           )}
@@ -167,8 +154,11 @@ export function Login() {
 function errorText(caught: unknown, signingUp: boolean): string {
   if (!(caught instanceof ApiError)) return t.login.failed
   if (caught.status === 0) return t.login.unreachable
-  if (caught.status === 401) return t.login.wrongCredentials
-  if (caught.status === 409) return t.login.taken
-  if (caught.status === 422) return signingUp ? t.login.checkFields : t.login.wrongCredentials
+  if (caught.status === 401 || caught.status === 403) return t.login.wrongCredentials
+  // The API: an account from before Neon Auth has this email.
+  if (caught.status === 409) return t.login.needsVerifiedEmail
+  // Neon Auth: USER_ALREADY_EXISTS.
+  if (caught.status === 422) return signingUp ? t.login.taken : t.login.wrongCredentials
+  if (caught.status === 400) return t.login.checkFields
   return t.login.failed
 }

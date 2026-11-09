@@ -32,7 +32,6 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import security
 from app.main import app
 from app.quota import STORE_TZ
 from cheaprecipe.agents import critic, planner
@@ -102,8 +101,7 @@ def agents(monkeypatch):
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(security, "_SCRYPT_N", 2**10)
+def client(tmp_path, neon_auth):
     engine = make_engine("sqlite://", poolclass=StaticPool)
     init_db(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -125,15 +123,13 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides[get_session] = override
     test_client = TestClient(app)
     test_client.sessions = factory  # for reading back what was stored
+    test_client.neon_auth = neon_auth
     yield test_client
     app.dependency_overrides.clear()
 
 
 def _user(client) -> dict:
-    token = client.post(
-        "/auth/signup",
-        json={"username": "tester", "email": "tester@example.com", "password": "correct horse battery"},
-    ).json()["token"]
+    token = client.neon_auth.sign_in(client, "tester@example.com")["token"]
     headers = {"Authorization": f"Bearer {token}"}
     # EDEKA's market finder is out of reach in tests: the search falls back
     # to the branches already known — the one the fixture offers were loaded for.
@@ -521,7 +517,6 @@ def test_a_refine_job_returns_the_quota_too(client, agents):
 def test_a_job_is_only_for_its_user(client):
     headers = _user(client)
     job = client.post("/generate/jobs/weekly", headers=headers).json()
-    other = client.post("/auth/signup", json={"username": "other", "email": "o@example.com",
-                                              "password": "correct horse battery"}).json()["token"]
+    other = client.neon_auth.sign_in(client, "o@example.com")["token"]
     assert client.get(f"/generate/jobs/{job['id']}",
                       headers={"Authorization": f"Bearer {other}"}).status_code == 404

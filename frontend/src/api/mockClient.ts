@@ -27,7 +27,7 @@ export const OFFER_WEEK_START = '2025-11-17'
 
 /** Any email and password sign in; nothing leaves the browser. */
 export function login(email: string, _password: string): Promise<AuthSession> {
-  return resolve({ token: 'mock-token', user: { ...user, email } })
+  return resolve({ user: { ...user, email } })
 }
 
 export function signup(request: SignupRequest): Promise<AuthSession> {

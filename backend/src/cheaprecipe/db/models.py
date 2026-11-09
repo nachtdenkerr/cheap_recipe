@@ -109,8 +109,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(30), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    # A hash (argon2/bcrypt output), never the password itself — hence the length.
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # The Neon Auth (Managed Better Auth) user this account belongs to: the
+    # `sub` of the JWT the API verifies. Null only for an account made before
+    # Neon Auth, until its owner signs in with a verified email.
+    auth_user_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # Accounts from before Neon Auth kept their scrypt hash; nothing reads it now.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     fullname: Mapped[str | None] = mapped_column(String(120))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -690,3 +694,33 @@ class RecipeFetch(Base):
     returned: Mapped[int] = mapped_column(default=0)
     added: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PlanningJob(Base):
+    """A plan being made in the background (app/jobs.py).
+
+    In Postgres rather than in memory so any API process can answer for it,
+    and so the page can watch it live: the `live` Neon Function seals a
+    Realtime query over this row (functions/live) and the page subscribes to
+    `status` and `steps` instead of polling.
+    """
+
+    __tablename__ = "planning_job"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_account.id", ondelete="CASCADE"), index=True)
+    # "weekly" or "refine".
+    kind: Mapped[str] = mapped_column(String(10))
+    # "running", "done" or "failed".
+    status: Mapped[str] = mapped_column(String(10), default="running")
+    # What planning has done so far, oldest first.
+    steps: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # When done: {"recipes": [...], "quota": {...} | null}, as the API sends them.
+    result: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+    error_status: Mapped[int | None]
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    def __repr__(self) -> str:
+        return f"PlanningJob(id={self.id!r}, kind={self.kind!r}, status={self.status!r})"

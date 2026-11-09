@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app import scheduler
+from app import jobs, scheduler
 from app.routers import auth, generate, markets, mealplan, nutrition, recipes, shopping
 from cheaprecipe.db.session import SessionLocal, database_url, init_db
 from cheaprecipe.logging_setup import setup_logging
@@ -30,6 +30,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Agent traces to Phoenix, when PHOENIX_COLLECTOR_ENDPOINT is set.
     tracing = setup_tracing()
     init_db()
+    # Plans a previous process was making are gone; let their users plan again.
+    jobs.fail_abandoned(SessionLocal)
     log.info(
         "API ready — database %s, log file %s, tracing %s, weekly refresh %s",
         database_url(), path or "off", "on" if tracing else "off",

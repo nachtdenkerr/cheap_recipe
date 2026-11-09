@@ -33,10 +33,16 @@ def spoonacular_api_key() -> str | None:
     return os.environ.get("SPOONACULAR_API_KEY")
 
 
-def secret_key() -> str | None:
-    """Signs the API's session tokens. Unset means tokens die with the process."""
+def neon_auth_base_url() -> str | None:
+    """The branch's Neon Auth URL; its origin issues the JWTs the API accepts."""
     load_keys()
-    return os.environ.get("SECRET_KEY")
+    return os.environ.get("NEON_AUTH_BASE_URL")
+
+
+def neon_auth_jwks_url() -> str | None:
+    """Where the keys that sign Neon Auth JWTs are published."""
+    load_keys()
+    return os.environ.get("NEON_AUTH_JWKS_URL")
 
 
 # Where the pipeline and the API write their log; LOG_FILE= (empty) turns it off.

@@ -3,95 +3,113 @@
 A plan takes minutes — the planner agent and the critic, round after round —
 and one request that long looks frozen. A job runs the same code as
 POST /generate and /generate/refine, after the response that started it,
-and records the steps planning reports (cheaprecipe/observability/progress.py)
-for the page to poll.
+and records the steps planning reports (cheaprecipe/observability/progress.py).
 
-In memory: jobs belong to this API process, and a restart loses the running
-ones (the plan is not saved, so the user just plans again). One running job
-per user: starting another returns the one already running.
+Jobs are rows in `planning_job`, so the page can watch one live: the `live`
+Neon Function seals a Realtime query over the row and the page subscribes
+to its status and steps (frontend/src/api/planning.ts). GET /generate/jobs/{id}
+still answers too, and carries the result once the job is done.
+
+One running job per user: starting another returns the one already running.
+A job left running by an API that stopped is marked failed when the next one
+starts (`fail_abandoned`), so the user can plan again.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session, sessionmaker
 
+from cheaprecipe.db.models import PlanningJob
 from cheaprecipe.observability import progress
 
 log = logging.getLogger(__name__)
 
-# Finished jobs are kept this long for the page to collect.
-KEEP_FOR = timedelta(hours=1)
+ABANDONED = "Planning stopped when the server restarted; please plan again."
 
 
-@dataclass
-class Job:
-    id: str
-    user_id: int
-    kind: str  # "weekly" or "refine"
-    status: str = "running"  # running | done | failed
-    steps: list[str] = field(default_factory=list)
-    result: object | None = None
-    error: str | None = None
-    error_status: int | None = None
-    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    finished_at: datetime | None = None
+def _now() -> datetime:
+    # Naive UTC, like the column (DateTime without a time zone).
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
-_jobs: dict[str, Job] = {}
-_lock = threading.Lock()
+def running_for(session: Session, user_id: int) -> PlanningJob | None:
+    return session.scalars(
+        select(PlanningJob).where(PlanningJob.user_id == user_id, PlanningJob.status == "running")
+    ).first()
 
 
-def _prune(now: datetime) -> None:
-    for job_id, job in list(_jobs.items()):
-        if job.finished_at and now - job.finished_at > KEEP_FOR:
-            del _jobs[job_id]
+def create(session: Session, user_id: int, kind: str) -> PlanningJob:
+    job = PlanningJob(id=uuid.uuid4().hex, user_id=user_id, kind=kind, status="running", steps=[])
+    session.add(job)
+    session.commit()
+    return job
 
 
-def running_for(user_id: int) -> Job | None:
-    with _lock:
-        return next((j for j in _jobs.values() if j.user_id == user_id and j.status == "running"), None)
-
-
-def create(user_id: int, kind: str) -> Job:
-    with _lock:
-        _prune(datetime.now(UTC))
-        job = Job(id=uuid.uuid4().hex, user_id=user_id, kind=kind)
-        _jobs[job.id] = job
-        return job
-
-
-def get(job_id: str, user_id: int) -> Job | None:
+def get(session: Session, job_id: str, user_id: int) -> PlanningJob | None:
     """A job, only for the user who started it."""
-    with _lock:
-        job = _jobs.get(job_id)
+    job = session.get(PlanningJob, job_id)
     return job if job is not None and job.user_id == user_id else None
 
 
-def run(job: Job, work: Callable[[], object]) -> None:
-    """Run `work` for `job`, recording its steps, its result or its error."""
+def fail_abandoned(factory: sessionmaker) -> int:
+    """Mark jobs a previous API process left running as failed."""
+    with factory() as session:
+        count = session.execute(
+            update(PlanningJob)
+            .where(PlanningJob.status == "running")
+            .values(status="failed", error=ABANDONED, error_status=503, finished_at=_now())
+        ).rowcount
+        session.commit()
+    if count:
+        log.info("marked %d planning job(s) from before the restart as failed", count)
+    return count
+
+
+def run(
+    factory: sessionmaker,
+    job_id: str,
+    work: Callable[[], object],
+    serialize: Callable[[object], dict],
+) -> None:
+    """Run `work` for the job, recording its steps, its result or its error.
+
+    Each step is its own short write, so a live subscriber sees it as it
+    happens; `serialize` turns the result into what the row keeps.
+    """
+    steps: list[str] = []
+
+    def save(**values) -> None:
+        with factory() as session:
+            session.execute(update(PlanningJob).where(PlanningJob.id == job_id).values(**values))
+            session.commit()
 
     def step(text: str) -> None:
-        with _lock:
-            if not job.steps or job.steps[-1] != text:
-                job.steps.append(text)
+        if steps and steps[-1] == text:
+            return
+        steps.append(text)
+        try:
+            save(steps=list(steps))
+        except Exception:  # a lost step must not stop the plan
+            log.warning("could not record a step of planning job %s", job_id, exc_info=True)
 
+    outcome: dict
     try:
         with progress.listening(step):
             result = work()
     except HTTPException as exc:
         # What the plain request would have answered: 409 no offers, 429 quota…
-        job.status, job.error, job.error_status = "failed", str(exc.detail), exc.status_code
+        outcome = {"status": "failed", "error": str(exc.detail), "error_status": exc.status_code}
     except Exception:  # anything else: the page must still hear the job ended
-        log.exception("planning job %s failed", job.id)
-        job.status, job.error, job.error_status = "failed", "Planning failed; please try again.", 500
+        log.exception("planning job %s failed", job_id)
+        outcome = {"status": "failed", "error": "Planning failed; please try again.", "error_status": 500}
     else:
-        job.status, job.result = "done", result
-    job.finished_at = datetime.now(UTC)
-    log.info("planning job %s (%s) %s after %d steps", job.id, job.kind, job.status, len(job.steps))
+        outcome = {"status": "done", "result": serialize(result)}
+    save(**outcome, finished_at=_now())
+    log.info("planning job %s %s after %d steps", job_id, outcome["status"], len(steps))

@@ -6,6 +6,7 @@
  * camelCase on the wire, and match ./types.ts.
  */
 
+import { endSession, getToken, signIn, signUp } from '../auth/neonAuth'
 import { getSession, signOut } from '../auth/session'
 import { ApiError } from './errors'
 import type {
@@ -39,7 +40,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const session = getSession()
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (session) headers.Authorization = `Bearer ${session.token}`
+  const token = await getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
 
   let response: Response
   try {
@@ -53,7 +55,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
 
   if (response.status === 401 && session) {
-    // The token expired or was revoked: back to the login page.
+    // The Neon Auth session ended or expired: back to the login page.
     signOut()
     window.location.assign('/login')
   }
@@ -77,12 +79,27 @@ async function errorMessage(response: Response): Promise<string> {
 
 // --- auth -----------------------------------------------------------------------
 
-export function login(email: string, password: string): Promise<AuthSession> {
-  return request('POST', '/auth/login', { email, password })
+/** Sign in with Neon Auth, then open the account it belongs to. */
+export async function login(email: string, password: string): Promise<AuthSession> {
+  await signIn(email, password)
+  return openAccount()
 }
 
-export function signup(body: SignupRequest): Promise<AuthSession> {
-  return request('POST', '/auth/signup', body)
+/** Sign up with Neon Auth; the API makes the account on its first request. */
+export async function signup(body: SignupRequest): Promise<AuthSession> {
+  await signUp(body.email, body.password, body.name ?? '')
+  return openAccount()
+}
+
+async function openAccount(): Promise<AuthSession> {
+  try {
+    return { user: await request<User>('GET', '/auth/me') }
+  } catch (error) {
+    // Signed in to Neon Auth but not to the app (409: an older account
+    // with this email): don't stay half signed in.
+    await endSession()
+    throw error
+  }
 }
 
 export function fetchUser(): Promise<User> {

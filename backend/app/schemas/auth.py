@@ -8,26 +8,6 @@ from app.schemas import CamelModel
 from app.schemas.markets import Market
 from cheaprecipe.vocabulary import MEAL_TYPES, Allergen, CommonDiet, Cuisine, MealType
 
-# A shape check only; whether the address exists is not the API's to decide.
-Email = Annotated[
-    str,
-    Field(max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"),
-    AfterValidator(str.lower),
-]
-
-
-class SignupRequest(CamelModel):
-    username: str = Field(min_length=3, max_length=30)
-    email: Email
-    password: str = Field(min_length=8, max_length=128)
-    name: str | None = Field(default=None, max_length=120)
-
-
-class LoginRequest(CamelModel):
-    email: Email
-    password: str
-
-
 MAX_HOME_MARKETS = 3
 
 
@@ -51,11 +31,6 @@ class User(CamelModel):
     week_time_availability: list[int] | None
     # Which meals of the day the week plan covers.
     meal_types: list[MealType]
-
-
-class AuthSession(CamelModel):
-    token: str
-    user: User
 
 
 def _clean_ingredients(names: list[str] | None) -> list[str] | None:

@@ -35,3 +35,14 @@ def no_neon_services(monkeypatch):
     monkeypatch.setattr(storage, "enabled", lambda: False)
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
 
+
+@pytest.fixture(autouse=True)
+def neon_auth(monkeypatch):
+    """Neon Auth, signed locally: tokens shaped like the branch's (EdDSA,
+    issuer and audience the auth origin), verified by app/security.py
+    against this key instead of the branch's JWKS."""
+    from tests.neon_auth import LocalNeonAuth
+
+    auth = LocalNeonAuth()
+    auth.install(monkeypatch)
+    return auth

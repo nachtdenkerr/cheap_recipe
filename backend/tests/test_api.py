@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import security
 from app.main import app
 from app.quota import STORE_TZ, week_bounds
 from cheaprecipe.agents import critic, planner
@@ -25,14 +25,11 @@ from cheaprecipe.db.models import (
     UserPreference,
 )
 from cheaprecipe.db.session import get_session, init_db, make_engine
-
-PASSWORD = "correct horse battery"
+from tests.neon_auth import LocalNeonAuth
 
 
 @pytest.fixture
-def db(monkeypatch):
-    # Cheap scrypt parameters: the production cost is deliberate, and slow.
-    monkeypatch.setattr(security, "_SCRYPT_N", 2**10)
+def db():
     engine = make_engine("sqlite://", poolclass=StaticPool)
     init_db(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -47,18 +44,16 @@ def db(monkeypatch):
 
 
 @pytest.fixture
-def client(db):
+def client(db, neon_auth):
     # No `with`: the lifespan would create tables in the real database.
-    return TestClient(app)
+    client = TestClient(app)
+    client.neon_auth = neon_auth
+    return client
 
 
-def _signup(client, email="nga@example.com", username="nga"):
-    response = client.post(
-        "/auth/signup",
-        json={"username": username, "email": email, "password": PASSWORD, "name": "Nga"},
-    )
-    assert response.status_code == 201, response.text
-    return response.json()
+def _signup(client, email="nga@example.com", username=None):
+    """A Neon Auth user's first request, which makes their account."""
+    return client.neon_auth.sign_in(client, email)
 
 
 def _auth(token):
@@ -124,15 +119,8 @@ def _set_home(user, *branches):
     user.preference.home_markets = list(branches)
 
 
-def test_signup_login_and_me(client):
-    _signup(client)
-
-    wrong = client.post("/auth/login", json={"email": "nga@example.com", "password": "nope"})
-    assert wrong.status_code == 401
-
-    login = client.post("/auth/login", json={"email": "NGA@example.com", "password": PASSWORD})
-    assert login.status_code == 200
-    token = login.json()["token"]
+def test_a_new_neon_auth_user_gets_an_account(client, db):
+    token = client.neon_auth.token("NGA@example.com", "Nga")
 
     me = client.get("/auth/me", headers=_auth(token)).json()
     assert me == {
@@ -142,20 +130,43 @@ def test_signup_login_and_me(client):
         "healthGoal": None, "age": None, "gender": None, "weekTimeAvailability": None,
             "mealTypes": ["lunch", "dinner"],
     }
+    # The same identity again is the same account, not a second one.
+    client.get("/auth/me", headers=_auth(client.neon_auth.token("nga@example.com")))
+    with db() as session:
+        users = session.scalars(select(User)).all()
+    assert len(users) == 1
+    assert users[0].username == "nga" and users[0].auth_user_id is not None
+    assert users[0].password_hash is None
 
 
-def test_duplicate_signup_conflicts(client):
-    _signup(client)
-    response = client.post(
-        "/auth/signup",
-        json={"username": "other", "email": "nga@example.com", "password": PASSWORD},
-    )
-    assert response.status_code == 409
+def test_an_account_from_before_neon_auth_needs_a_verified_email(client, db):
+    with db() as session:
+        session.add(User(username="nga", email="nga@example.com", password_hash="scrypt$old",
+                         preference=UserPreference()))
+        session.commit()
+
+    unverified = client.get("/auth/me", headers=_auth(client.neon_auth.token("nga@example.com")))
+    assert unverified.status_code == 409
+
+    verified = client.neon_auth.token("nga@example.com", verified=True)
+    assert client.get("/auth/me", headers=_auth(verified)).status_code == 200
+    with db() as session:
+        users = session.scalars(select(User)).all()
+    assert len(users) == 1 and users[0].auth_user_id == client.neon_auth.users["nga@example.com"]
+
+
+def test_tokens_must_be_neon_auth_s_and_current(client):
+    auth = client.neon_auth
+    assert client.get("/auth/me", headers=_auth(auth.token("a@x.test", expires_in=-60))).status_code == 401
+    assert client.get("/auth/me", headers=_auth(auth.token("a@x.test", audience="https://evil.test"))).status_code == 401
+    forged = LocalNeonAuth().token("a@x.test")  # signed by a key the API does not trust
+    assert client.get("/auth/me", headers=_auth(forged)).status_code == 401
+    assert client.post("/auth/login", json={"email": "a@x.test", "password": "x"}).status_code in (404, 405)
 
 
 def test_endpoints_require_a_valid_token(client):
     assert client.get("/auth/me").status_code == 401
-    assert client.get("/recipes", headers=_auth("1.9999999999.forged")).status_code == 401
+    assert client.get("/recipes", headers=_auth("not.a.jwt")).status_code == 401
 
 
 def test_update_preferences(client, db):
