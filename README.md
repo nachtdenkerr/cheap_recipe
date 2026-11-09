@@ -135,6 +135,29 @@ OPENROUTER_API_KEY=...
 SPOONACULAR_API_KEY=...
 ```
 
+### Neon
+
+The backend runs on [Neon](https://neon.com): `neon.ts` declares the services
+and `neon deploy --env .env` provisions them and writes their variables into
+`.env` (Postgres, Auth, Object Storage, AI Gateway, Realtime). Without
+`DATABASE_URL` the API falls back to the SQLite file in `data/`.
+
+| Service | Used for |
+| --- | --- |
+| Postgres | the API's database — `DATABASE_URL` (pooled) for requests, `DATABASE_URL_UNPOOLED` for migrations |
+| Auth | sign-up and sign-in (Managed Better Auth); the page sends the session JWT, `app/security.py` verifies it, and an account is made on a user's first request |
+| Object Storage | `assets` bucket: each refresh archives the week's classified offers (`cheaprecipe/storage.py`) |
+| Function `live` | seals a Realtime query over the user's planning job (`functions/live`) |
+| Realtime | the page watches its planning job live instead of polling |
+| AI Gateway | the models, when `LLM_PROVIDER=neon` (`NEON_AI_MODEL` picks one; default `gpt-5-mini`); OpenRouter otherwise |
+
+`APP_ORIGINS` (default `http://localhost:5173`) lists where the page is served
+from, for Realtime and the function's CORS. The frontend reads the branch's
+public URLs from the root `.env` (`frontend/vite.config.ts`).
+`scripts/copy_sqlite_to_postgres.py` copies a local SQLite database into an
+empty Neon database. Accounts from before Neon Auth are taken over by a Neon
+Auth user only once that user's email is verified.
+
 Neither store needs credentials — no cookie, no key. One caveat for EDEKA: do
 not give it a spoofed browser user-agent. The edge rejects a request claiming to
 be Chrome or Firefox without a matching TLS fingerprint, so adding a browser UA
